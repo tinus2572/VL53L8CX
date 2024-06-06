@@ -2,7 +2,7 @@
 authors = ["quentin chavigny turbe <quentin.chavignyturbe@st.com>"]
 edition = "2018"
 readme = "README.md"
-name = "v53l8cx-driver"
+name = "vl53l8cx"
 version = "0.1.0"
 
 [dependencies]
@@ -27,7 +27,7 @@ features = ["stm32f401"]
 
 # this lets you use `cargo fix`!
 [[bin]]
-name = "v53l8cx-driver"
+name = "vl53l8cx"
 test = false
 bench = false
 
