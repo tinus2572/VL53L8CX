@@ -1,3 +1,5 @@
+use crate::VL53L8CX_XTALK_BUFFER_SIZE;
+use crate::VL53L8CX_CONFIGURATION_SIZE;
 
 
 pub const VL53L8CX_FW_NBTAR_RANGING: u8 = 2;
@@ -21513,7 +21515,7 @@ pub const  VL53L8CX_FIRMWARE: [u8; 86016] = [
 ];
  
  
-pub const VL53L8CX_DEFAULT_CONFIGURATION: [u8; 972] = [
+pub const VL53L8CX_DEFAULT_CONFIGURATION: [u8; VL53L8CX_CONFIGURATION_SIZE as usize] = [
    0x54, 0x50, 0x00, 0x80,
    0x00, 0x04, 0x04, 0x04,
    0x00, 0x00, 0x08, 0x08,
@@ -21759,7 +21761,7 @@ pub const VL53L8CX_DEFAULT_CONFIGURATION: [u8; 972] = [
    0x00, 0x01, 0x03, 0xc8
 ];
  
-pub const VL53L8CX_DEFAULT_XTALK: [u8; 776] = [
+pub const VL53L8CX_DEFAULT_XTALK: [u8; VL53L8CX_XTALK_BUFFER_SIZE as usize] = [
    0x9f, 0xd8, 0x00, 0xc0,
    0x03, 0x20, 0x09, 0x60,
    0x0b, 0x08, 0x08, 0x17,
