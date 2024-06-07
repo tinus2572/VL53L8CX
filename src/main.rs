@@ -159,7 +159,7 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
 {
     pub fn new_i2c(i2c: P, address: u8) -> Result<Self, Error<P::Error>> {
         let bus: Vl53l8cxI2C<P> = Vl53l8cxI2C::new(i2c, address as SevenBitAddress);
-        let mut temp_buffer: [u8; VL53L8CX_NVM_DATA_SIZE as usize] = [0; VL53L8CX_NVM_DATA_SIZE as usize];
+        let temp_buffer: [u8; VL53L8CX_NVM_DATA_SIZE as usize] = [0; VL53L8CX_NVM_DATA_SIZE as usize];
         let instance: Vl53l8cx<Vl53l8cxI2C<P>> = Self { bus, temp_buffer };
         Ok(instance)
     }
@@ -197,12 +197,13 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }  
     
-    fn dci_read_data(&mut self, data: &[u8], index: u16) -> Result<(), Error<B::Error>> {
+    fn dci_read_data(&mut self, data: &mut [u8], index: u16) -> Result<(), Error<B::Error>> {
         let mut cmd: [u8; 12] = [
             0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x0f,
             0x00, 0x02, 0x00, 0x08
         ];
+
         if data.len() + 12 > VL53L8CX_TEMPORARY_BUFFER_SIZE as usize{
             return Err(Error::Other);
         } else {
@@ -210,6 +211,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             cmd[1] = (index & 0xff) as u8;
             cmd[2] = ((data.len() & 0xff0) >> 4) as u8;
             cmd[3] = ((data.len() & 0xf) << 4) as u8;
+
             /* Request data reading from FW */
             self.write_multi_to_register(VL53L8CX_UI_CMD_END - 11, &cmd);
             self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03);
@@ -219,10 +221,16 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.swap_buffer(&mut self.temp_buffer);
 
             /* Copy data from FW into input structure (-4 bytes to remove header) */
-// TODO
-            // for (i = 0 ; i < (int16_t)data_size; i++) {
-            //     data[i] = p_dev->temp_buffer[i + 4];
-            // }
+            let data_iter =  data.iter_mut();
+            let mut temp_buffer_iter =  self.temp_buffer.iter();
+            temp_buffer_iter.next(); // Header removal ()
+            temp_buffer_iter.next(); // Header removal ()
+            temp_buffer_iter.next(); // Header removal ()
+            temp_buffer_iter.next(); // Header removal ()
+
+            for (data_val, &tmp_buf_val) in data_iter.zip(temp_buffer_iter) {
+                *data_val = tmp_buf_val;
+            }
         }
        
         Ok(())
@@ -232,10 +240,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
 
-    fn dci_replace_data(&mut self, data: &[u8], index: u16, new_data: &[u8], new_data_pos: u16) -> Result<(), Error<B::Error>> {
+    fn dci_replace_data(&mut self, data: &mut [u8], index: u16, new_data: &[u8], new_data_size: u8, new_data_pos: u8) -> Result<(), Error<B::Error>> {
         self.dci_read_data(data, index)?;
 // TODO
-        // (void)memcpy(&(data[new_data_pos]), new_data, new_data_size);
+
+        data[new_data_pos..].copy_from_slice(new_data[..new_data_size]);
         self.dci_write_data(data, index)?;
         
         
@@ -369,6 +378,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         self.read_from_register(VL53L8CX_UI_CMD_START,  &mut self.temp_buffer)?;
 // TODO
+        
         // (void)memcpy(p_dev->offset_data, p_dev->temp_buffer,VL53L8CX_OFFSET_BUFFER_SIZE);
         self.send_offset_data(VL53L8CX_RESOLUTION_4X4)?;
 
@@ -385,7 +395,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
       
         if VL53L8CX_NB_TARGET_PER_ZONE != 1 {
             tmp[0] = VL53L8CX_NB_TARGET_PER_ZONE as u8;
-            self.dci_replace_data(&mut self.temp_buffer, VL53L8CX_DCI_FW_NB_TARGET, &mut tmp, 0x0C)?;
+            self.dci_replace_data(&mut self.temp_buffer, VL53L8CX_DCI_FW_NB_TARGET, &mut tmp, 1, 0x0C)?;
         }
       
         self.dci_write_data(&mut single_range, VL53L8CX_DCI_SINGLE_RANGE)?;
