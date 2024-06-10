@@ -296,8 +296,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 copy_nonoverlapping(src, dst, range_grid_size);
             }
 
-            for i in 0..4 {
-                for j in 0..4 {
+            for j in 0..4 {
+                for i in 0..4 {
                     signal_grid[i + (4 * j)] = (
                           signal_grid[(2 * i) + (16 * j) + 0]
                         + signal_grid[(2 * i) + (16 * j) + 1]
@@ -334,12 +334,58 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         self.temp_buffer[0x1E0..0x1E0+footer.len()].copy_from_slice(&footer);
         self.write_multi_to_register_temp_buffer(0x2E18, VL53L8CX_OFFSET_BUFFER_SIZE)?;
-        self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03);
+        self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
 
         Ok(())
     }   
 
     fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+        let res4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x17, 0x08, 0x10, 0x10, 0x07];
+        let dss_4x4: [u8; 8] = [0x00, 0x78, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08];
+        let profile_4x4: [u8; 4] = [0xA0, 0xFC, 0x01, 0x00];
+        let mut signal_grid: [u32; 64] = [0; 64];
+        let signal_grid_size: usize = size_of_val(&signal_grid) / size_of::<u32>();
+
+
+        self.temp_buffer[..VL53L8CX_XTALK_BUFFER_SIZE].copy_from_slice(&self.xtalk_data);
+
+        /* Data extrapolation is required for 4X4 Xtalk */
+        if resolution == VL53L8CX_RESOLUTION_4X4 {
+            self.temp_buffer[0x8..0x8 + res4x4.len()].copy_from_slice(&res4x4);
+            self.temp_buffer[0x020..0x020 + dss_4x4.len()].copy_from_slice(&dss_4x4);
+
+            self.swap_temp_buffer(VL53L8CX_XTALK_BUFFER_SIZE)?;
+
+            unsafe {
+                let src: *const u32 = self.temp_buffer.as_ptr().add(0x34) as *const u32;
+                let dst: *mut u32 = signal_grid.as_mut_ptr();
+                copy_nonoverlapping(src, dst, signal_grid_size);
+            }
+
+            for j in 0..3 {
+                for i in 0..3 {
+                    signal_grid[i + (4 * j)] = (
+                        signal_grid[(2 * i) + (16 * j) + 0]
+                      + signal_grid[(2 * i) + (16 * j) + 1]
+                      + signal_grid[(2 * i) + (16 * j) + 8]
+                      + signal_grid[(2 * i) + (16 * j) + 9]
+                  ) / 4;
+                }
+            }
+
+            unsafe {
+                let src: *const u8 = signal_grid.as_ptr() as *const u8;
+                let dst: *mut u8 = self.temp_buffer.as_mut_ptr().add(0x34);
+                copy_nonoverlapping(src, dst, signal_grid_size);
+            }
+            self.swap_temp_buffer(VL53L8CX_XTALK_BUFFER_SIZE)?;
+            self.temp_buffer[0x134..0x134+profile_4x4.len()].copy_from_slice(&profile_4x4);
+            let tmp: [u8; 4] = [0; 4];
+            self.temp_buffer[0x078..0x078+4].copy_from_slice(&tmp);
+        }
+
+        self.write_multi_to_register_temp_buffer(0x2CF8, VL53L8CX_XTALK_BUFFER_SIZE)?;
+        self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
 
         Ok(())
     }  
@@ -365,62 +411,68 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
             /* Read new data sent (4 bytes header + data_size + 8 bytes footer) */
             self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_TEMPORARY_BUFFER_SIZE)?;
-            self.swap_temp_buffer(data_size);
+            self.swap_temp_buffer(data_size)?;
 
             /* Copy data from FW into input structure (-4 bytes to remove header) */
-            let data_iter: core::slice::IterMut<u8> =  data.iter_mut();
-            let mut temp_buffer_iter =  self.temp_buffer[..data_size].iter();
-            temp_buffer_iter.next(); // Header removal ()
-            temp_buffer_iter.next(); // Header removal ()
-            temp_buffer_iter.next(); // Header removal ()
-            temp_buffer_iter.next(); // Header removal ()
-
-            for (data_val, &tmp_buf_val) in data_iter.zip(temp_buffer_iter) {
-                *data_val = tmp_buf_val;
+            for i in 0..(data_size-1) {
+                data[i] = self.temp_buffer[i+4];
             }
+
+            // let data_iter: core::slice::IterMut<u8> =  data.iter_mut();
+            // let mut temp_buffer_iter =  self.temp_buffer[..data_size].iter();
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // for (data_val, &tmp_buf_val) in data_iter.zip(temp_buffer_iter) {
+            //     *data_val = tmp_buf_val;
+            // }
         }
        
         Ok(())
     }   
     
-    // fn dci_read_data_temp_buffer(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
-    //     let mut cmd: [u8; 12] = [
-    //         0x00, 0x00, 0x00, 0x00,
-    //         0x00, 0x00, 0x00, 0x0f,
-    //         0x00, 0x02, 0x00, 0x08
-    //     ];
+    fn dci_read_data_temp_buffer(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
+        let mut cmd: [u8; 12] = [
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x0f,
+            0x00, 0x02, 0x00, 0x08
+        ];
 
-    //     if data_size + 12 > VL53L8CX_TEMPORARY_BUFFER_SIZE {
-    //         return Err(Error::Other);
-    //     } else {
-    //         cmd[0] = (index >> 8) as u8;
-    //         cmd[1] = (index & 0xff) as u8;
-    //         cmd[2] = ((data_size & 0xff0) >> 4) as u8;
-    //         cmd[3] = ((data_size & 0xf) << 4) as u8;
+        if data_size + 12 > VL53L8CX_TEMPORARY_BUFFER_SIZE {
+            return Err(Error::Other);
+        } else {
+            cmd[0] = (index >> 8) as u8;
+            cmd[1] = (index & 0xff) as u8;
+            cmd[2] = ((data_size & 0xff0) >> 4) as u8;
+            cmd[3] = ((data_size & 0xf) << 4) as u8;
 
-    //         /* Request data reading from FW */
-    //         self.write_multi_to_register(VL53L8CX_UI_CMD_END - 11, &cmd)?;
-    //         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
+            /* Request data reading from FW */
+            self.write_multi_to_register(VL53L8CX_UI_CMD_END - 11, &cmd)?;
+            self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
 
-    //         /* Read new data sent (4 bytes header + data_size + 8 bytes footer) */
-    //         self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_TEMPORARY_BUFFER_SIZE)?;
-    //         self.swap_temp_buffer(data_size);
+            /* Read new data sent (4 bytes header + data_size + 8 bytes footer) */
+            self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_TEMPORARY_BUFFER_SIZE)?;
+            self.swap_temp_buffer(data_size)?;
 
-    //         /* Copy data from FW into input structure (-4 bytes to remove header) */
-    //         let data_iter: core::slice::IterMut<u8> =  self.temp_buffer.iter_mut();
-    //         let mut temp_buffer_iter =  self.temp_buffer[..data_size].iter();
-    //         temp_buffer_iter.next(); // Header removal ()
-    //         temp_buffer_iter.next(); // Header removal ()
-    //         temp_buffer_iter.next(); // Header removal ()
-    //         temp_buffer_iter.next(); // Header removal ()
+            /* Copy data from FW into input structure (-4 bytes to remove header) */
+            for i in 0..(data_size-1) {
+                self.temp_buffer[i] = self.temp_buffer[i+4];
+            }
 
-    //         for (data_val, &tmp_buf_val) in data_iter.zip(temp_buffer_iter) {
-    //             *data_val = tmp_buf_val;
-    //         }
-    //     }
+            // let data_iter: core::slice::IterMut<u8> =  self.temp_buffer.iter_mut();
+            // let mut temp_buffer_iter =  self.temp_buffer[..data_size].iter();
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // for (data_val, &tmp_buf_val) in data_iter.zip(temp_buffer_iter) {
+            //     *data_val = tmp_buf_val;
+            // }
+        }
        
-    //     Ok(())
-    // }   
+        Ok(())
+    }   
     
     fn dci_write_data(&mut self, data: &mut [u8], index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut headers: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
@@ -444,7 +496,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.swap_buffer(data, data_size)?;
 
             for i in 0..(data_size-1) {
-                self.temp_buffer[data_size-1 - i+4] = data[i];
+                self.temp_buffer[data_size-1 - i+4] = data[data_size-1 - i];
             }
 
             // let data_iter =  data.iter().rev();
@@ -472,52 +524,55 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
     
-    // fn dci_write_data_temp_buffer(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
-    //     let headers: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
-    //     let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0f, 0x05, 0x01,
-    //         ((data_size + 8) >> 8) as u8,
-    //         ((data_size + 8) & 0xFF) as u8
-    //     ];
+    fn dci_write_data_temp_buffer(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
+        let mut headers: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+        let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0f, 0x05, 0x01,
+            ((data_size + 8) >> 8) as u8,
+            ((data_size + 8) & 0xFF) as u8
+        ];
         
-    //     let address: u16 = VL53L8CX_UI_CMD_END - (data_size as u16 + 12) + 1;
+        let address: u16 = VL53L8CX_UI_CMD_END - (data_size as u16 + 12) + 1;
 
-    //     /* Check if cmd buffer is large enough */
-    //     if (data_size + 12) > VL53L8CX_TEMPORARY_BUFFER_SIZE {
-    //         Err(Error::Other);
-    //     } else {
-    //         headers[0] = (index >> 8) as u8;
-    //         headers[1] = (index & 0xff) as u8;
-    //         headers[2] = ((data_size & 0xff0) >> 4) as u8;
-    //         headers[3] = ((data_size & 0xf) << 4) as u8;
+        /* Check if cmd buffer is large enough */
+        if (data_size + 12) > VL53L8CX_TEMPORARY_BUFFER_SIZE {
+            return Err(Error::Other);
+        } else {
+            headers[0] = (index >> 8) as u8;
+            headers[1] = (index & 0xff) as u8;
+            headers[2] = ((data_size & 0xff0) >> 4) as u8;
+            headers[3] = ((data_size & 0xf) << 4) as u8;
 
-    //         /* Copy data from structure to FW format (+4 bytes to add header) */
-    //         self.swap_temp_buffer(data_size)?;
+            /* Copy data from structure to FW format (+4 bytes to add header) */
+            self.swap_temp_buffer(data_size)?;
 
-    //         let data_iter: core::iter::Rev<core::slice::Iter<u8>> =  self.temp_buffer.iter().rev();
-    //         let mut temp_buffer_iter =  self.temp_buffer[..data_size].iter_mut();
-    //         temp_buffer_iter.next(); // Header removal ()
-    //         temp_buffer_iter.next(); // Header removal ()
-    //         temp_buffer_iter.next(); // Header removal ()
-    //         temp_buffer_iter.next(); // Header removal ()
-    //         temp_buffer_iter.rev();
+            for i in 0..(data_size-1) {
+                self.temp_buffer[data_size-1 - i+4] = self.temp_buffer[data_size-1 - i];
+            }
 
-    //         for (data_val, tmp_buf_val) in data_iter.zip(temp_buffer_iter) {
-    //             tmp_buf_val = &mut data_val;
-    //         }
+            // let data_iter: core::iter::Rev<core::slice::Iter<u8>> =  self.temp_buffer.iter().rev();
+            // let mut temp_buffer_iter =  self.temp_buffer[..data_size].iter_mut();
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.next(); // Header removal ()
+            // temp_buffer_iter.rev();
+            // for (data_val, tmp_buf_val) in data_iter.zip(temp_buffer_iter) {
+            //     tmp_buf_val = &mut data_val;
+            // }
 
-    //         /* Add headers and footer */
-    //         self.temp_buffer[..headers.len()].copy_from_slice(&headers);
-    //         self.temp_buffer[(data_size + footer.len())..].copy_from_slice(&footer);
+            /* Add headers and footer */
+            self.temp_buffer[..headers.len()].copy_from_slice(&headers);
+            self.temp_buffer[(data_size + footer.len())..].copy_from_slice(&footer);
 
-    //         /* Send data to FW */
-    //         self.write_multi_to_register(address, &self.temp_buffer[..(data_size + 12)])?;
-    //         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
+            /* Send data to FW */
+            self.write_multi_to_register_temp_buffer(address, data_size + 12)?;
+            self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
 
-    //         self.swap_temp_buffer(data_size)?;
-    //     }
+            self.swap_temp_buffer(data_size)?;
+        }
 
-    //     Ok(())
-    // }   
+        Ok(())
+    }   
 
 
     fn dci_replace_data(&mut self, data: &mut [u8], index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
@@ -528,13 +583,13 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
     
-    // fn dci_replace_data_temp_buffer(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
-    //     self.dci_read_data_temp_buffer(index, data_size)?;
-    //     self.temp_buffer[new_data_pos..].copy_from_slice(&new_data[..new_data_size]);
-    //     self.dci_write_data_temp_buffer(index, data_size)?;
+    fn dci_replace_data_temp_buffer(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
+        self.dci_read_data_temp_buffer(index, data_size)?;
+        self.temp_buffer[new_data_pos..].copy_from_slice(&new_data[..new_data_size]);
+        self.dci_write_data_temp_buffer(index, data_size)?;
         
-    //     Ok(())
-    // }   
+        Ok(())
+    }   
 
     pub fn swap_buffer(&mut self, buf: &mut [u8], size: usize) -> Result<(), Error<B::Error>> {
         for chunk in buf[..size].chunks_exact_mut(4) {
@@ -677,7 +732,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
       
         if VL53L8CX_NB_TARGET_PER_ZONE != 1 {
             tmp[0] = VL53L8CX_NB_TARGET_PER_ZONE as u8;
-            // self.dci_replace_data(&mut self.temp_buffer, VL53L8CX_DCI_FW_NB_TARGET, 16, &mut tmp, 1, 0x0C)?;
+            self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FW_NB_TARGET, 16, &mut tmp, 1, 0x0C)?;
         }
       
         self.dci_write_data(&mut single_range, VL53L8CX_DCI_SINGLE_RANGE, size_of::<u8>())?;
@@ -685,7 +740,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(())
     }
-    
     
         
     pub fn is_alive(&mut self) -> Result<(), Error<B::Error>> {
