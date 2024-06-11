@@ -41,32 +41,16 @@ pub const VL53L8CX_REFLECTANCE_BH: u32 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0
 pub const VL53L8CX_TARGET_STATUS_BH: u32 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xE0840401 } else { 0x6B900401 };
 pub const VL53L8CX_MOTION_DETECT_BH: u32 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xD85808C0 } else { 0xCC5008C0 };
 
-// if VL53L8CX_NB_TARGET_PER_ZONE == 1 {
-
-// const VL53L8CX_METADATA_IDX: u16 = 0x54B4;
-// const VL53L8CX_SPAD_COUNT_IDX: u16 = 0x55D0;
-// const VL53L8CX_AMBIENT_RATE_IDX: u16 = 0x54D0;
-// const VL53L8CX_NB_TARGET_DETECTED_IDX: u16 = 0xDB84;
-// const VL53L8CX_SIGNAL_RATE_IDX: u16 = 0xDBC4;
-// const VL53L8CX_RANGE_SIGMA_MM_IDX: u16 = 0xDEC4;
-// const VL53L8CX_DISTANCE_IDX: u16 = 0xDF44;
-// const VL53L8CX_REFLECTANCE_EST_PC_IDX: u16 = 0xE044;
-// const VL53L8CX_TARGET_STATUS_IDX: u16 = 0xE084;
-// const VL53L8CX_MOTION_DETEC_IDX: u16 = 0xD858;
-
-// } else {
-
-// const VL53L8CX_METADATA_IDX: u16 = 0x54B4;
-// const VL53L8CX_SPAD_COUNT_IDX: u16 = 0x55D0;
-// const VL53L8CX_AMBIENT_RATE_IDX: u16 = 0x54D0;
-// const VL53L8CX_NB_TARGET_DETECTED_IDX: u16 = 0x57D0;
-// const VL53L8CX_SIGNAL_RATE_IDX: u16 = 0x5890;
-// const VL53L8CX_RANGE_SIGMA_MM_IDX: u16 = 0x6490;
-// const VL53L8CX_DISTANCE_IDX: u16 = 0x6690;
-// const VL53L8CX_REFLECTANCE_EST_PC_IDX: u16 = 0x6A90;
-// const VL53L8CX_TARGET_STATUS_IDX: u16 = 0x6B90;
-// const VL53L8CX_MOTION_DETEC_IDX: u16 = 0xCC50;
-// } 
+pub const VL53L8CX_METADATA_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0x54B4 } else { 0x54B4 };
+pub const VL53L8CX_SPAD_COUNT_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0x55D0 } else { 0x55D0 };
+pub const VL53L8CX_AMBIENT_RATE_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0x54D0 } else { 0x54D0 };
+pub const VL53L8CX_NB_TARGET_DETECTED_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xDB84 } else { 0x57D0 };
+pub const VL53L8CX_SIGNAL_RATE_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xDBC4 } else { 0x5890 };
+pub const VL53L8CX_RANGE_SIGMA_MM_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xDEC4 } else { 0x6490 };
+pub const VL53L8CX_DISTANCE_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xDF44 } else { 0x6690 };
+pub const VL53L8CX_REFLECTANCE_EST_PC_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xE044 } else { 0x6A90 };
+pub const VL53L8CX_TARGET_STATUS_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xE084 } else { 0x6B90 };
+pub const VL53L8CX_MOTION_DETEC_IDX: u16 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0xD858 } else { 0xCC50 };
 
 pub const VL53L8CX_NVM_DATA_SIZE: usize = 492;
 pub const VL53L8CX_CONFIGURATION_SIZE: usize = 972;
@@ -95,20 +79,20 @@ pub const VL53L8CX_UI_CMD_START: u16 = 0x2C04;
 pub const VL53L8CX_UI_CMD_END: u16 = 0x2FFF;
 
 
-const L5CX_AMB_SIZE: usize = (VL53L8CX_DISABLE_AMBIENT_PER_SPAD * 260) as usize;
-const L5CX_SPAD_SIZE: usize = (VL53L8CX_DISABLE_NB_SPADS_ENABLED * 260) as usize;
-const L5CX_NTAR_SIZE: usize = (VL53L8CX_DISABLE_NB_TARGET_DETECTED * 68) as usize;
-const L5CX_SPS_SIZE: usize = (VL53L8CX_DISABLE_SIGNAL_PER_SPAD * 
+const L5CX_AMB_SIZE: usize = ((1-VL53L8CX_DISABLE_AMBIENT_PER_SPAD) * 260) as usize;
+const L5CX_SPAD_SIZE: usize = ((1-VL53L8CX_DISABLE_NB_SPADS_ENABLED) * 260) as usize;
+const L5CX_NTAR_SIZE: usize = ((1-VL53L8CX_DISABLE_NB_TARGET_DETECTED) * 68) as usize;
+const L5CX_SPS_SIZE: usize = ((1-VL53L8CX_DISABLE_SIGNAL_PER_SPAD) * 
     ((256 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
-const L5CX_SIGR_SIZE: usize = (VL53L8CX_DISABLE_RANGE_SIGMA_MM * 
+const L5CX_SIGR_SIZE: usize = ((1-VL53L8CX_DISABLE_RANGE_SIGMA_MM) * 
     ((128 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
-const L5CX_DIST_SIZE: usize = (VL53L8CX_DISABLE_DISTANCE_MM *
+const L5CX_DIST_SIZE: usize = ((1-VL53L8CX_DISABLE_DISTANCE_MM) *
     ((128 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
-const L5CX_RFLEST_SIZE: usize = (VL53L8CX_DISABLE_REFLECTANCE_PERCENT *
+const L5CX_RFLEST_SIZE: usize = ((1-VL53L8CX_DISABLE_REFLECTANCE_PERCENT) *
     ((64 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
-const L5CX_STA_SIZE: usize = (VL53L8CX_DISABLE_TARGET_STATUS * 
+const L5CX_STA_SIZE: usize = ((1-VL53L8CX_DISABLE_TARGET_STATUS) * 
     ((64 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
-const L5CX_MOT_SIZE: usize = (VL53L8CX_DISABLE_MOTION_INDICATOR * 144) as usize;
+const L5CX_MOT_SIZE: usize = ((1-VL53L8CX_DISABLE_MOTION_INDICATOR) * 144) as usize;
 
 const VL53L8CX_MAX_RESULTS_SIZE: usize = 40 
 + L5CX_AMB_SIZE + L5CX_SPAD_SIZE + L5CX_NTAR_SIZE + L5CX_SPS_SIZE 
@@ -123,6 +107,7 @@ if 1024 < VL53L8CX_MAX_RESULTS_SIZE {
     1024
 };
 
+pub const VL53L8CX_USE_RAW_FORMAT: u8 = 0;
 
 // struct VL53L8CX_Configuration {
 //     platform: ,
@@ -136,41 +121,7 @@ if 1024 < VL53L8CX_MAX_RESULTS_SIZE {
 //     is_auto_stop_enabled: u8,  
 // }
 
-
-// struct VL53L8CX_ResultsData {
-//     silicon_temp_degc: i8,
-//     ambient_per_spad: [u32, VL53L8CX_RESOLUTION_8X8],
-//     nb_target_detected[u8, VL53L8CX_RESOLUTION_8X8],
-//     nb_spads_enabled[u32, VL53L8CX_RESOLUTION_8X8],
-//     signal_per_spad[u32, (VL53L8CX_RESOLUTION_8X8 * VL53L8CX_NB_TARGET_PER_ZONE)],
-//     range_sigma_mm[u16, (VL53L8CX_RESOLUTION_8X8 * VL53L8CX_NB_TARGET_PER_ZONE)],
-//     distance_mm[u16, (VL53L8CX_RESOLUTION_8X8 * VL53L8CX_NB_TARGET_PER_ZONE)],
-//     reflectance[u8, (VL53L8CX_RESOLUTION_8X8 * VL53L8CX_NB_TARGET_PER_ZONE)],
-//     target_status[u8, (VL53L8CX_RESOLUTION_8X8 * VL53L8CX_NB_TARGET_PER_ZONE)],
-//     struct motion_indicator {
-//     global_indicator_1: u32,
-//     global_indicator_2: u32,
-//     status: u8,
-//     nb_of_detected_aggregates: u8,
-//     nb_of_aggregates: u8,
-//     spare: u8,
-//     motion: [u8, 32],
-// } 
-
-// } 
-
-
-// union Block_header {
-// bytes: u32,
-// struct {
-//     type: u32,
-//     size: u32,
-//     idx: u32,
-// }
-// }
-
 pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 1;
-
 
 // Change the value to 1 to DISABLE the given parameter 
 // (All enable by default)

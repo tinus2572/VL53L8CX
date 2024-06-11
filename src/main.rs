@@ -2,13 +2,11 @@
 #![no_std]
 #![allow(dead_code)]
 
-use embedded_hal::i2c::{self, I2c, SevenBitAddress};
+use embedded_hal::i2c::{I2c, SevenBitAddress};
 use embedded_hal::spi::{SpiDevice, Operation};
 use panic_halt as _; 
 use cortex_m_rt::entry;
-use stm32f4xx_hal::pac::stk::calib::TENMS_R;
 use core::convert::TryInto;
-use core::f64::consts::E;
 use core::mem::size_of;
 use core::mem::size_of_val;
 use core::ptr::copy_nonoverlapping;
@@ -49,10 +47,33 @@ pub enum Error<B> {
 
 }
 
+pub struct MotionIndicator {
+    global_indicator_1: u32,
+    global_indicator_2: u32,
+    status: u8,
+    nb_of_detected_aggregates: u8,
+    nb_of_aggregates: u8,
+    spare: u8,
+    motion: [u8; 32],
+}
+
+pub struct ResultsData {
+    silicon_temp_degc: i8,
+    ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
+    nb_target_detected: [u8; VL53L8CX_RESOLUTION_8X8 as usize],
+    nb_spads_enabled: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
+    signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    distance_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    motion_indicator: MotionIndicator
+} 
+
 pub struct BlockHeader {
     bh_type: u32,
     bh_size: u32,
-    bh_idx: u32 
+    bh_idx: u16
 }
 
 impl BlockHeader {
@@ -88,11 +109,7 @@ impl<P: I2c> BusOperation for Vl53l8cxI2C<P> {
     }
     
     #[inline]
-    fn write_read(
-        &mut self,
-        wbuf: &[u8],
-        rbuf: &mut [u8],
-    ) -> Result<(), Self::Error> {
+    fn write_read(&mut self, wbuf: &[u8], rbuf: &mut [u8]) -> Result<(), Self::Error> {
         self.i2c.write_read(self.address, wbuf, rbuf)?;
         
         Ok(())
@@ -130,11 +147,7 @@ impl<P: SpiDevice> BusOperation for Vl53l8cxSPI<P> {
     }
 
     #[inline]
-    fn write_read(
-        &mut self,
-        wbuf: &[u8],
-        rbuf: &mut [u8],
-    ) -> Result<(), Self::Error> {
+    fn write_read(&mut self, wbuf: &[u8], rbuf: &mut [u8]) -> Result<(), Self::Error> {
         self.spi
             .transaction(&mut [Operation::Write(wbuf), Operation::Read(rbuf)])?;
         Ok(())
@@ -202,7 +215,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
     }
 }
 
-// TODO
 impl<P> Vl53l8cx<Vl53l8cxI2C<P>> 
     where
     P: I2c,
@@ -415,7 +427,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }  
 
-
     pub fn is_alive(&mut self) -> Result<(), Error<B::Error>> {
         let mut device_id: [u8; 1] = [0];
         let mut revision_id: [u8; 1] = [0];
@@ -429,9 +440,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(())
     }
-
-
-    
+   
     fn dci_read_data(&mut self, data: &mut [u8], index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut cmd: [u8; 12] = [
             0x00, 0x00, 0x00, 0x00,
@@ -572,7 +581,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
 
-
     fn dci_replace_data(&mut self, data: &mut [u8], index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
         self.dci_read_data(data, index, data_size)?;
         data[new_data_pos..].copy_from_slice(&new_data[..new_data_size]);
@@ -606,7 +614,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(())
     }
-
 
     pub fn init(&mut self) -> Result<(), Error<B::Error>> {
         let mut tmp: [u8; 1] = [0];    
@@ -739,7 +746,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
-    
     fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
         let mut power_mode: u8 = 0;
         let mut tmp: [u8; 1] = [0];
@@ -819,8 +825,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
-
-
     fn start_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let resolution: u8 = self.get_resolution()?;
         let tmp: [u16; 1] = [0];
@@ -849,15 +853,15 @@ impl<B: BusOperation> Vl53l8cx<B> {
         ];
 
         output_bh_enable[0] += 
-            VL53L8CX_DISABLE_AMBIENT_PER_SPAD * 8
-            + VL53L8CX_DISABLE_NB_SPADS_ENABLED * 16
-            + VL53L8CX_DISABLE_NB_TARGET_DETECTED * 32
-            + VL53L8CX_DISABLE_SIGNAL_PER_SPAD * 64
-            + VL53L8CX_DISABLE_RANGE_SIGMA_MM * 128
-            + VL53L8CX_DISABLE_DISTANCE_MM * 256
-            + VL53L8CX_DISABLE_REFLECTANCE_PERCENT * 512
-            + VL53L8CX_DISABLE_TARGET_STATUS * 1024
-            + VL53L8CX_DISABLE_MOTION_INDICATOR * 2048;
+            (1-VL53L8CX_DISABLE_AMBIENT_PER_SPAD) * 8
+            + (1-VL53L8CX_DISABLE_NB_SPADS_ENABLED) * 16
+            + (1-VL53L8CX_DISABLE_NB_TARGET_DETECTED) * 32
+            + (1-VL53L8CX_DISABLE_SIGNAL_PER_SPAD) * 64
+            + (1-VL53L8CX_DISABLE_RANGE_SIGMA_MM) * 128
+            + (1-VL53L8CX_DISABLE_DISTANCE_MM) * 256
+            + (1-VL53L8CX_DISABLE_REFLECTANCE_PERCENT) * 512
+            + (1-VL53L8CX_DISABLE_TARGET_STATUS) * 1024
+            + (1-VL53L8CX_DISABLE_MOTION_INDICATOR) * 2048;
 
         /* Update data size */
         let upper_bound = size_of_val(&output) / size_of::<u32>();
@@ -920,7 +924,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(())
     }
-
 
     fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
@@ -1082,7 +1085,209 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    fn get_integration_timranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
+        let mut ranging_mode: u8 = 0;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
+        if self.temp_buffer[1] == 1 {
+            ranging_mode = VL53L8CX_RANGING_MODE_CONTINUOUS;
+        } else {
+            ranging_mode = VL53L8CX_RANGING_MODE_AUTONOMOUS;
+        }
+        Ok(ranging_mode)
+    }
 
+    fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
+        let mut single_range: u32 = 0;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
+
+        if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
+            self.temp_buffer[1] = 1;
+            self.temp_buffer[3] = 3;
+            single_range = 0;
+        } else if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
+            self.temp_buffer[1] = 3;
+            self.temp_buffer[3] = 2;
+            single_range = 1;
+        } else {
+            return Err(Error::Other);
+        }
+
+        self.dci_write_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
+// TODO 
+        self.dci_write_data(&mut single_range, VL53L8CX_DCI_SINGLE_RANGE, size_of::<u32>())?;
+
+        Ok(())
+    }
+
+    fn get_frequency_hz(&mut self) -> Result<u8, Error<B::Error>> {
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4)?;
+        let frequency_hz: u8 = self.temp_buffer[0x01];
+
+        Ok(frequency_hz)
+    }
+
+    fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
+        let tmp: [u8; 1] = [frequency_hz];
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4, &tmp, 1, 0x01)?;
+
+        Ok(())
+    }
+
+    fn check_data_ready(&mut self) -> Result<u8, Error<B::Error>> {
+        let mut is_ready: u8 = 0;
+        self.read_from_register_to_temp_buffer(0, 4)?;
+        if (self.temp_buffer[0] != self.streamcount)
+        && (self.temp_buffer[1] == 5)
+            && (self.temp_buffer[2] & 5 == 5)
+            && (self.temp_buffer[3] & 10 == 10) {
+                is_ready = 1;
+                self.streamcount = self.temp_buffer[0];
+        } else {
+            if self.temp_buffer[3] & 0x80 != 0 {
+// TODO
+                return Err(Error::Other);
+            }
+            is_ready = 0;
+        }
+
+        Ok(is_ready)
+    }
+
+    fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
+        let mut result: ResultsData;
+        let mut msize: u32 = 0;
+        let mut header_id: u16 = 0;
+        let mut footer_id: u16 = 0;
+        let mut bh: BlockHeader = BlockHeader::new();
+        self.read_from_register_to_temp_buffer(0, self.data_read_size as usize)?;
+        self.streamcount = self.temp_buffer[0];
+        self.swap_temp_buffer(self.data_read_size as usize)?;
+
+  /* Start conversion at position 16 to avoid headers */
+        for i in (16..self.data_read_size as usize).step_by(4) {
+// TODO 
+    // bh_ptr = (union Block_header *) & (p_dev->temp_buffer[i]);
+            if bh.bh_type > 0x1 && bh.bh_type < 0xd {
+                msize = bh.bh_type * bh.bh_size;
+            } else  {
+                msize = bh.bh_size;
+            }
+
+            if bh.bh_idx == VL53L8CX_METADATA_IDX {
+                result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
+            } else if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_AMBIENT_RATE_IDX {
+                unsafe {
+                    let src: *const u32 = self.temp_buffer.as_ptr().add(i+4) as *const u32;
+                    let dst: *mut u32 = result.ambient_per_spad.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx == VL53L8CX_SPAD_COUNT_IDX {
+                unsafe {
+                    let src: *const u32 = self.temp_buffer.as_ptr().add(i+4) as *const u32;
+                    let dst: *mut u32 = result.nb_spads_enabled.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx == VL53L8CX_NB_TARGET_DETECTED_IDX {
+                unsafe {
+                    let src: *const u8 = self.temp_buffer.as_ptr().add(i+4) as *const u8;
+                    let dst: *mut u8 = result.nb_target_detected.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_SIGNAL_RATE_IDX {
+                unsafe {
+                    let src: *const u32 = self.temp_buffer.as_ptr().add(i+4) as *const u32;
+                    let dst: *mut u32 = result.signal_per_spad.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_RANGE_SIGMA_MM == 0 && bh.bh_idx == VL53L8CX_RANGE_SIGMA_MM_IDX {
+                unsafe {
+                    let src: *const u16 = self.temp_buffer.as_ptr().add(i+4) as *const u16;
+                    let dst: *mut u16 = result.range_sigma_mm.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx == VL53L8CX_DISTANCE_IDX {
+                unsafe {
+                    let src: *const u16 = self.temp_buffer.as_ptr().add(i+4) as *const u16;
+                    let dst: *mut u16 = result.distance_mm.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx == VL53L8CX_REFLECTANCE_EST_PC_IDX {
+                unsafe {
+                    let src: *const u8 = self.temp_buffer.as_ptr().add(i+4) as *const u8;
+                    let dst: *mut u8 = result.reflectance.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx == VL53L8CX_TARGET_STATUS_IDX {
+                unsafe {
+                    let src: *const u8 = self.temp_buffer.as_ptr().add(i+4) as *const u8;
+                    let dst: *mut u8 = result.target_status.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx == VL53L8CX_MOTION_DETEC_IDX {
+                unsafe {
+                    let src: *const u32 = self.temp_buffer.as_ptr().add(i+4) as *const u32;
+                    let dst: *mut u32 = result.motion_indicator.as_mut_ptr();
+                    copy_nonoverlapping(src, dst, msize as usize);
+                }
+            }
+            i += msize as usize;
+        }
+
+        if VL53L8CX_USE_RAW_FORMAT == 0 {
+            /* Convert data into their real format */
+            if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 {
+                for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
+                    result.ambient_per_spad[i] /= 2048;
+                }
+            }
+            for i in 0..(VL53L8CX_RESOLUTION_8X8 as usize)*(VL53L8CX_NB_TARGET_PER_ZONE as usize) {
+                if VL53L8CX_DISABLE_DISTANCE_MM == 0 {
+                    result.distance_mm[i] /= 4;
+                    if result.distance_mm[i] < 0 {
+                        result.distance_mm[i] = 0;
+                    }
+                }
+                if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 {
+                    result.reflectance[i] /= 128;
+                }
+                if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 {
+                    result.signal_per_spad[i] /= 2048;
+                }
+            }
+            /* Set target status to 255 if no target is detected for this zone */
+            if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 {
+                for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
+                    if result.nb_target_detected[i] == 0 {
+                        for j in 0..VL53L8CX_NB_TARGET_PER_ZONE as usize {
+                            if VL53L8CX_DISABLE_TARGET_STATUS == 0 {
+                                result.target_status[VL53L8CX_NB_TARGET_PER_ZONE as usize*i + j] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 {
+                for i in 0..32 {
+                    result.motion_indicator.motion[i] /= 65535;
+                }
+            }
+        }
+        
+        /* Check if footer id and header id are matching. This allows to detect corrupted frames */
+        header_id = (self.temp_buffer[8] as u16) << 8 & 0xff00;
+        header_id |= (self.temp_buffer[9] as u16) & 0x00ff;
+
+        footer_id = (self.temp_buffer[self.data_read_size as usize - 4] as u16) << 8 & 0xff00;
+        footer_id |= (self.temp_buffer[self.data_read_size as usize - 3] as u16) & 0x00ff;
+
+        if header_id != footer_id {
+            return Err(Error::Other);
+        }
+
+        Ok(result)
+    }    
+    
 }
 
 
