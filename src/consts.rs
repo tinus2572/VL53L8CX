@@ -1,6 +1,5 @@
 
 
-
 // const VL53L8CX_API_REVISION: &str = "VL53L8CX_1.0.4";
 
 // const VL53L8CX_DEFAULT_I2C_ADDRESS: u16 = 0x52;

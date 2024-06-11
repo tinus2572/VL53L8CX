@@ -1,11 +1,15 @@
-#![no_main]
-#![no_std]
 #![allow(dead_code)]
+#![no_std]
+#![no_main]
 
+use cortex_m_rt::entry;
+
+use embedded_hal::digital::OutputPin;
+use stm32f4xx_hal::rcc::LPEnable;
+use stm32f4xx_hal::{gpio, pac, prelude::* };
 use embedded_hal::i2c::{I2c, SevenBitAddress};
 use embedded_hal::spi::{SpiDevice, Operation};
 use panic_halt as _; 
-use cortex_m_rt::entry;
 use core::convert::TryInto;
 use core::mem::size_of;
 use core::mem::size_of_val;
@@ -30,6 +34,8 @@ pub struct Vl53l8cx<B: BusOperation> {
     streamcount: u8,
     data_read_size: u32,
 
+    lpn_pin: i8,
+    i2c_rst_pin: i8,
     bus: B,
 }
 
@@ -118,12 +124,13 @@ impl<P: I2c> BusOperation for Vl53l8cxI2C<P> {
 
 pub struct Vl53l8cxSPI<P> {
     spi: P,
+    cs_pin: i8
 }
 
 // new for spi
 impl<P: SpiDevice> Vl53l8cxSPI<P> {
-    pub fn new(spi: P) -> Self {
-        Self { spi }
+    pub fn new(spi: P, cs_pin: i8) -> Self {
+        Self { spi, cs_pin }
     }
 }
 
@@ -219,14 +226,23 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
     where
     P: I2c,
 {
-    pub fn new_i2c(i2c: P, address: u8) -> Result<Self, Error<P::Error>> {
+    pub fn new_i2c(i2c: P, address: u8, lpn_pin: i8, i2c_rst_pin: i8) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
         let bus: Vl53l8cxI2C<P> = Vl53l8cxI2C::new(i2c, address as SevenBitAddress);
         let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
         let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
-        let instance: Vl53l8cx<Vl53l8cxI2C<P>> = Self { bus, temp_buffer, offset_data, xtalk_data, streamcount, data_read_size };
+        let instance: Vl53l8cx<Vl53l8cxI2C<P>> = Self { 
+            bus, 
+            temp_buffer, 
+            offset_data, 
+            xtalk_data, 
+            streamcount, 
+            data_read_size, 
+            lpn_pin, 
+            i2c_rst_pin 
+        };
         Ok(instance)
     }
 
@@ -238,21 +254,73 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
         
         Ok(())
     }
+
+    pub fn init_sensor(&mut self, address: u8) -> Result<(), Error<B::Error>>{
+        self.off()?;
+        self.on()?;
+        self.set_i2c_address(address)?;
+        self.is_alive()?;
+        self.init()?;
+        Ok(())
+    }
+
+    pub fn begin(&mut self) -> Result<(), Error<B::Error>> {
+        self.lpn_pin.into_push_pull_output().set_low();
+        self.i2c_rst_pin.into_push_pull_output().set_low();
+        Ok(())
+    }
+
+    pub fn end(&mut self) -> Result<(), Error<B::Error>> {
+        self.lpn_pin.into_input();
+        self.i2c_rst_pin.into_input();
+        Ok(())
+    }
 }
 
 impl<P> Vl53l8cx<Vl53l8cxSPI<P>> 
     where P: SpiDevice,
 {
-    pub fn new_spi(spi: P) -> Result<Self, Error<P::Error>> {
+    pub fn new_spi(spi: P, cs_pin: i8, lpn_pin: i8, i2c_rst_pin: i8) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
-        let bus: Vl53l8cxSPI<P> = Vl53l8cxSPI::new(spi);
+        let bus: Vl53l8cxSPI<P> = Vl53l8cxSPI::new(spi, cs_pin);
         let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
         let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
-        let instance: Vl53l8cx<Vl53l8cxSPI<P>> = Self { bus, temp_buffer, offset_data, xtalk_data, streamcount, data_read_size };
+        let instance: Vl53l8cx<Vl53l8cxSPI<P>> = Self { 
+            bus, 
+            temp_buffer, 
+            offset_data, 
+            xtalk_data, 
+            streamcount, 
+            data_read_size,
+            lpn_pin,
+            i2c_rst_pin
+        };
         
         Ok(instance)
+    }
+
+    pub fn init_sensor(&mut self, address: u8) -> Result<(), Error<B::Error>>{
+        self.off()?;
+        self.on()?;
+        self.is_alive()?;
+        self.init()?;
+        Ok(())
+    }
+    
+    pub fn begin(&mut self) -> Result<(), Error<B::Error>> {
+        self.lpn_pin.into_push_pull_output().set_low();
+        self.i2c_rst_pin.into_push_pull_output().set_low();
+        self.bus.cs_pin.into_push_pull_output().set_high();
+        Ok(())
+    }
+
+    pub fn end(&mut self) -> Result<(), Error<B::Error>> {
+        self.lpn_pin.into_input();
+        self.i2c_rst_pin.into_input();
+        self.bus.cs_pin.into_input();
+        Ok(())
     }
 }
 
@@ -260,16 +328,65 @@ impl<P> Vl53l8cx<Vl53l8cxSPI<P>>
 
 impl<B: BusOperation> Vl53l8cx<B> {
 
+
+
+    pub fn on(&mut self) -> Result<(), Error<B::Error>>{
+        self.lpn_pin.set_high();
+        let dp = pac::Peripherals::take().unwrap();
+        let cp = cortex_m::Peripherals::take().unwrap();
+        let rcc = dp.RCC.constrain();
+        let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+        let mut delay = cp.SYST.delay(&clocks);
+        delay.delay_ms(10);
+        Ok(())
+    }
+
+    pub fn off(&mut self) -> Result<(), Error<B::Error>>{
+        self.lpn_pin.set_low();
+        let dp = pac::Peripherals::take().unwrap();
+        let cp = cortex_m::Peripherals::take().unwrap();
+        let rcc = dp.RCC.constrain();
+        let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+        let mut delay = cp.SYST.delay(&clocks);
+        delay.delay_ms(10);
+        Ok(())
+    }
+
+    pub fn i2c_reset(&mut self) -> Result<(), Error<B::Error>>{
+        let dp = pac::Peripherals::take().unwrap();
+        let cp = cortex_m::Peripherals::take().unwrap();
+        let rcc = dp.RCC.constrain();
+        let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+        let mut delay = cp.SYST.delay(&clocks);
+        self.i2c_rst_pin.set_low();
+        delay.delay_ms(10);
+        self.i2c_rst_pin.set_high();
+        delay.delay_ms(10);
+        self.i2c_rst_pin.set_low();
+        delay.delay_ms(10);
+        Ok(())
+    }
+
+    
+
+
     fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
+        let dp = pac::Peripherals::take().unwrap();
+        let cp = cortex_m::Peripherals::take().unwrap();
+        let rcc = dp.RCC.constrain();
+        let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+        let mut delay = cp.SYST.delay(&clocks);
+        let gpioa = dp.GPIOA.split();
+        let lpn: stm32f4xx_hal::gpio::Pin<'A', 5> = gpioa.pa5;
+
 
         loop {
             if self.temp_buffer[pos as usize] & mask == expected_val {
                 return Ok(());
             }
             self.read_from_register_to_temp_buffer(reg, size)?;
-// TODO
-            // delay_ms(10);
+            delay.delay_ms(10);
             if timeout >= 200 { /* 2s timeout */
                 return Err(Error::Other);
             } else if size >= 4 && self.temp_buffer[2] >= 0x7F {
@@ -285,6 +402,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut go2_status0: [u8; 1] = [0];
         let mut go2_status1: [u8; 1] = [0];
         let mut timeout: u16 = 0;
+        let dp = pac::Peripherals::take().unwrap();
+        let cp = cortex_m::Peripherals::take().unwrap();
+        let rcc = dp.RCC.constrain();
+        let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+        let mut delay = cp.SYST.delay(&clocks);
         
         loop {
             if timeout >= 500 {
@@ -297,8 +419,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
                     return Ok(());
                 }
             }
-// TODO
-            // delay_ms(1);
+            delay.delay_ms(1);
             timeout+=1;
             if go2_status0[0] & 0x01 != 0 {
                 return Ok(());
@@ -619,6 +740,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut tmp: [u8; 1] = [0];    
         let mut pipe_ctrl: [u8; 4] = [VL53L8CX_NB_TARGET_PER_ZONE as u8, 0x00, 0x01, 0x00];
         let mut single_range: [u8; 1] = [0x01];
+        let dp = pac::Peripherals::take().unwrap();
+        let cp = cortex_m::Peripherals::take().unwrap();
+        let rcc = dp.RCC.constrain();
+        let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+        let mut delay = cp.SYST.delay(&clocks);
 
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x0009, 0x04)?;
@@ -636,11 +762,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_to_register(0x0103, 0x01)?;
         self.write_to_register(0x000C, 0x00)?;
         self.write_to_register(0x000F, 0x43)?;
-        // delay_ms(1);
+        delay.delay_ms(1);
 
         self.write_to_register(0x000F, 0x40)?;
         self.write_to_register(0x000A, 0x01)?;
-        // delay_ms(100);
+        delay.delay_ms(100);
 
         self.write_to_register(0x7fff, 0x00)?;
         self.poll_for_answer(1, 0, 0x06, 0xff, 1)?;
@@ -697,8 +823,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         /* Check if FW correctly downloaded */
         self.write_to_register(0x7fff, 0x01)?;
         self.write_to_register(0x06, 0x03)?;
-// TODO
-        // delay_ms(5);
+        delay.delay_ms(5);
         self.write_to_register(0x7fff, 0x00)?;
         self.read_from_register(0x7fff, &mut tmp)?;
         self.write_to_register(0x0C, 0x01)?;
@@ -930,6 +1055,12 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut auto_flag_stop: [u32; 1] = [0];
         let mut buf: [u8; 4] = [0; 4];
         let mut tmp: [u8; 1] = [0];
+        let dp = pac::Peripherals::take().unwrap();
+        let cp = cortex_m::Peripherals::take().unwrap();
+        let rcc = dp.RCC.constrain();
+        let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+        let mut delay = cp.SYST.delay(&clocks);
+
         self.read_from_register(0x2ffc, &mut buf)?;
 
         unsafe {
@@ -952,8 +1083,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 }
 
                 self.read_from_register(0x6, &mut tmp)?;
-// TODO
-                // delay(10);
+                delay.delay_ms(10);
                 timeout += 1;
 
                 if timeout > 500 {
@@ -1291,27 +1421,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #[entry]
 fn main() -> ! {
-    
-    loop {
-        
-    }
+    loop {}
 }
