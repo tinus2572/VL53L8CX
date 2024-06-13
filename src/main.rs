@@ -32,6 +32,7 @@ pub struct Vl53l8cx<B: BusOperation> {
 
     lpn_pin: i8,
     i2c_rst_pin: i8,
+    
     bus: B,
 }
 
@@ -49,6 +50,7 @@ pub enum Error<B> {
 
 }
 
+#[repr(C)]
 pub struct MotionIndicator {
     global_indicator_1: u32,
     global_indicator_2: u32,
@@ -56,9 +58,23 @@ pub struct MotionIndicator {
     nb_of_detected_aggregates: u8,
     nb_of_aggregates: u8,
     spare: u8,
-    motion: [u8; 32],
+    motion: [u32; 32],
 }
 
+impl MotionIndicator {
+    pub fn new() -> Self {
+        let global_indicator_1: u32 = 0;
+        let global_indicator_2: u32 = 0;
+        let status: u8 = 0;
+        let nb_of_detected_aggregates: u8 = 0;
+        let nb_of_aggregates: u8 = 0;
+        let spare: u8 = 0;
+        let motion: [u32; 32] = [0; 32];
+        Self { global_indicator_1, global_indicator_2, status, nb_of_detected_aggregates, nb_of_aggregates, spare, motion }
+    }
+}
+
+#[repr(C)]
 pub struct ResultsData {
     silicon_temp_degc: i8,
     ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
@@ -66,12 +82,13 @@ pub struct ResultsData {
     nb_spads_enabled: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
     signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
-    distance_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     motion_indicator: MotionIndicator
 } 
 
+#[repr(C)]
 pub struct BlockHeader {
     bh_type: u32,
     bh_size: u32,
@@ -84,6 +101,22 @@ impl BlockHeader {
         let bh_size = 12;
         let bh_idx = 16;
         Self {bh_type, bh_size, bh_idx }
+    }
+}
+
+impl ResultsData {
+    pub fn new() -> Self {
+        let silicon_temp_degc: i8 = 0;
+        let ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
+        let nb_target_detected:[u8; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
+        let nb_spads_enabled:[u32; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
+        let signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let motion_indicator: MotionIndicator = MotionIndicator::new();
+        Self { silicon_temp_degc, ambient_per_spad, nb_spads_enabled, nb_target_detected, signal_per_spad, range_sigma_mm, distance_mm, reflectance, target_status, motion_indicator }
     }
 }
 
@@ -1269,224 +1302,133 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(is_ready)
     }
 
-//     fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
-//         let mut result: ResultsData;
-//         let mut msize: u32;
-//         let mut header_id: u16;
-//         let mut footer_id: u16;
-//         let bh: BlockHeader = BlockHeader::new();
-//         self.read_from_register_to_temp_buffer(0, self.data_read_size as usize)?;
-//         self.streamcount = self.temp_buffer[0];
-//         self.swap_temp_buffer(self.data_read_size as usize)?;
+    fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
+        let mut result: ResultsData = ResultsData::new();
+        let mut msize: u32;
+        let mut header_id: u16;
+        let mut footer_id: u16;
+        let mut bh: BlockHeader = BlockHeader::new();
+        self.read_from_register_to_temp_buffer(0, self.data_read_size as usize)?;
+        self.streamcount = self.temp_buffer[0];
+        self.swap_temp_buffer(self.data_read_size as usize)?;
 
-//   /* Start conversion at position 16 to avoid headers */
-//         for mut i in (16..self.data_read_size as usize).step_by(4) {
-// // TODO 
-//     // bh_ptr = (union Block_header *) & (p_dev->temp_buffer[i]);
-//             if bh.bh_type > 0x1 && bh.bh_type < 0xd {
-//                 msize = bh.bh_type * bh.bh_size;
-//             } else  {
-//                 msize = bh.bh_size;
-//             }
+  /* Start conversion at position 16 to avoid headers */
+        let mut i: usize = 16;
+        loop {
+            if i >= self.data_read_size as usize {
+                break;
+            }
+            let ptr: *const BlockHeader = self.temp_buffer[i..i+size_of_val(&bh)/size_of::<u32>()].as_ptr() as *const BlockHeader;
+            bh = unsafe { ptr.read() }; // + bitwise or
+            if bh.bh_type > 0x1 && bh.bh_type < 0xd {
+                msize = bh.bh_type * bh.bh_size;
+            } else  {
+                msize = bh.bh_size;
+            }
 
-//             if bh.bh_idx == VL53L8CX_METADATA_IDX {
-//                 result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
-//             } else if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_AMBIENT_RATE_IDX {
-//                 for (j, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
-//                     result.ambient_per_spad[j] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-//                 }
-//             } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx == VL53L8CX_SPAD_COUNT_IDX {
-//                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
-//                     result.nb_spads_enabled[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-//                 }
-//             } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx == VL53L8CX_NB_TARGET_DETECTED_IDX {
-//                 for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
-//                     result.nb_target_detected[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-//                 }
-//             } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_SIGNAL_RATE_IDX {
-//                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
-//                     result.signal_per_spad[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-//                 }
-//             } else if VL53L8CX_DISABLE_RANGE_SIGMA_MM == 0 && bh.bh_idx == VL53L8CX_RANGE_SIGMA_MM_IDX {
-//                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
-//                     result.range_sigma_mm[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
-//                 }
-//             } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx == VL53L8CX_DISTANCE_IDX {
-//                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
-//                     result.distance_mm[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
-//                 }
-//             } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx == VL53L8CX_REFLECTANCE_EST_PC_IDX {
-//                 for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
-//                     result.reflectance[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-//                 }
-//             } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx == VL53L8CX_TARGET_STATUS_IDX {
-//                 for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
-//                     result.target_status[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-//                 }
-//             } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx == VL53L8CX_MOTION_DETEC_IDX {
-//                 // unsafe {
-//                     // let src: *const u32 = self.temp_buffer.as_ptr().add(i+4) as *const u32;
-//                     // let dst: *mut u32 = result.motion_indicator.as_mut_ptr();
-//                     // copy_nonoverlapping(src, dst, msize as usize);
-//                 // }
-//             }
-//             i += msize as usize;
-//         }
+            if bh.bh_idx == VL53L8CX_METADATA_IDX {
+                result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
+            } else if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_AMBIENT_RATE_IDX {
+                for (j, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
+                    result.ambient_per_spad[j] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+                }
+            } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx == VL53L8CX_SPAD_COUNT_IDX {
+                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
+                    result.nb_spads_enabled[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+                }
+            } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx == VL53L8CX_NB_TARGET_DETECTED_IDX {
+                for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
+                    result.nb_target_detected[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+                }
+            } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_SIGNAL_RATE_IDX {
+                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
+                    result.signal_per_spad[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+                }
+            } else if VL53L8CX_DISABLE_RANGE_SIGMA_MM == 0 && bh.bh_idx == VL53L8CX_RANGE_SIGMA_MM_IDX {
+                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
+                    result.range_sigma_mm[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
+                }
+            } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx == VL53L8CX_DISTANCE_IDX {
+                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
+                    result.distance_mm[i] = (chunk[0] as i16) << 8 | (chunk[1] as i16);
+                }
+            } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx == VL53L8CX_REFLECTANCE_EST_PC_IDX {
+                for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
+                    result.reflectance[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+                }
+            } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx == VL53L8CX_TARGET_STATUS_IDX {
+                for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
+                    result.target_status[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+                }
+            } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx == VL53L8CX_MOTION_DETEC_IDX {
+                let ptr: *const MotionIndicator = self.temp_buffer[i+4..i+4+msize as usize].as_ptr() as *const MotionIndicator;
+                result.motion_indicator = unsafe { ptr.read() };
+            }
+            i += 4+msize as usize;
+        }
+        if VL53L8CX_USE_RAW_FORMAT == 0 {
+            /* Convert data into their real format */
+            if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 {
+                for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
+                    result.ambient_per_spad[i] /= 2048;
+                }
+            }
+            for i in 0..(VL53L8CX_RESOLUTION_8X8 as usize)*(VL53L8CX_NB_TARGET_PER_ZONE as usize) {
+                if VL53L8CX_DISABLE_DISTANCE_MM == 0 {
+                    result.distance_mm[i] /= 4;
+                    if result.distance_mm[i] < 0 {
+                        result.distance_mm[i] = 0;
+                    }
+                }
+                if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 {
+                    result.reflectance[i] /= 128;
+                }
+                if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 {
+                    result.signal_per_spad[i] /= 2048;
+                }
+            }
+            /* Set target status to 255 if no target is detected for this zone */
+            if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 {
+                for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
+                    if result.nb_target_detected[i] == 0 {
+                        for j in 0..VL53L8CX_NB_TARGET_PER_ZONE as usize {
+                            if VL53L8CX_DISABLE_TARGET_STATUS == 0 {
+                                result.target_status[VL53L8CX_NB_TARGET_PER_ZONE as usize*i + j] = 255;
+                            }
+                        }
+                    }
+                }
+            }
 
-//         if VL53L8CX_USE_RAW_FORMAT == 0 {
-//             /* Convert data into their real format */
-//             if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 {
-//                 for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
-//                     result.ambient_per_spad[i] /= 2048;
-//                 }
-//             }
-//             for i in 0..(VL53L8CX_RESOLUTION_8X8 as usize)*(VL53L8CX_NB_TARGET_PER_ZONE as usize) {
-//                 if VL53L8CX_DISABLE_DISTANCE_MM == 0 {
-//                     result.distance_mm[i] /= 4;
-//                     if result.distance_mm[i] < 0 {
-//                         result.distance_mm[i] = 0;
-//                     }
-//                 }
-//                 if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 {
-//                     result.reflectance[i] /= 128;
-//                 }
-//                 if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 {
-//                     result.signal_per_spad[i] /= 2048;
-//                 }
-//             }
-//             /* Set target status to 255 if no target is detected for this zone */
-//             if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 {
-//                 for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
-//                     if result.nb_target_detected[i] == 0 {
-//                         for j in 0..VL53L8CX_NB_TARGET_PER_ZONE as usize {
-//                             if VL53L8CX_DISABLE_TARGET_STATUS == 0 {
-//                                 result.target_status[VL53L8CX_NB_TARGET_PER_ZONE as usize*i + j] = 255;
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-
-//             if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 {
-//                 for i in 0..32 {
-//                     result.motion_indicator.motion[i] /= 65535;
-//                 }
-//             }
-//         }
+            if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 {
+                for i in 0..32 {
+                    result.motion_indicator.motion[i] /= 65535;
+                }
+            }
+        }
         
-//         /* Check if footer id and header id are matching. This allows to detect corrupted frames */
-//         header_id = (self.temp_buffer[8] as u16) << 8 & 0xff00;
-//         header_id |= (self.temp_buffer[9] as u16) & 0x00ff;
+        /* Check if footer id and header id are matching. This allows to detect corrupted frames */
+        header_id = (self.temp_buffer[8] as u16) << 8 & 0xff00;
+        header_id |= (self.temp_buffer[9] as u16) & 0x00ff;
 
-//         footer_id = (self.temp_buffer[self.data_read_size as usize - 4] as u16) << 8 & 0xff00;
-//         footer_id |= (self.temp_buffer[self.data_read_size as usize - 3] as u16) & 0x00ff;
+        footer_id = (self.temp_buffer[self.data_read_size as usize - 4] as u16) << 8 & 0xff00;
+        footer_id |= (self.temp_buffer[self.data_read_size as usize - 3] as u16) & 0x00ff;
 
-//         if header_id != footer_id {
-//             return Err(Error::Other);
-//         }
+        if header_id != footer_id {
+            return Err(Error::Other);
+        }
 
-//         Ok(result)
-//     }    
+        Ok(result)
+    }    
     
 }
 
-use core::fmt::Write;
-
-struct Example;
-
-impl Write for Example {
-    fn write_str(&mut self, _s: &str) -> core::fmt::Result {
-         unimplemented!();
-    }
-}
-
-fn test_new() {
-    let mut m = Example{};
-    write!(&mut m, "Hello World").expect("Not written");
-    assert_eq!(1, 2);
-}
-
-use stm32f4xx_hal::gpio::Edge;
-use cortex_m::interrupt::Mutex;
-
-use core::cell::RefCell;
-
-use stm32f4xx_hal::{
-    gpio::{self, Input},
-    i2c::{I2c1, Mode},
-    serial::Config,
-};
 
 
-type IntPin = gpio::PB0<Input>;
 
-static INT_PIN: Mutex<RefCell<Option<IntPin>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
-    let mut dp = pac::Peripherals::take().unwrap();
-    //let cp = cortex_m::Peripherals::take().unwrap();
-
-    let rcc = dp.RCC.constrain();
-
-    let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
-
-    let tim1 = dp.TIM1.delay_us(&clocks);
-    let tim2 = dp.TIM2.delay_us(&clocks);
-
-    let gpiob = dp.GPIOB.split();
-    let gpioa = dp.GPIOA.split();
-
-    let scl = gpiob.pb8;
-    let sda = gpiob.pb9;
-
-    let mut int_pin = gpiob.pb0.into_input();
-    // Configure Pin for Interrupts
-    // 1) Promote SYSCFG structure to HAL to be able to configure interrupts
-    let mut syscfg = dp.SYSCFG.constrain();
-    // 2) Make an interrupt source
-    int_pin.make_interrupt_source(&mut syscfg);
-    // 3) Make an interrupt source
-    int_pin.trigger_on_edge(&mut dp.EXTI, Edge::Rising);
-    // 4) Enable gpio interrupt
-    int_pin.enable_interrupt(&mut dp.EXTI);
-
-    // Enable the external interrupt in the NVIC by passing the interrupt number
-    unsafe {
-        cortex_m::peripheral::NVIC::unmask(int_pin.interrupt());
-    }
-
-    // Now that pin is configured, move pin into global context
-    cortex_m::interrupt::free(|cs| {
-        INT_PIN.borrow(cs).replace(Some(int_pin));
-    });
-
-    let i2c = I2c1::new(
-        dp.I2C1,
-        (scl, sda),
-        Mode::Standard { frequency:  100.kHz() },
-        &clocks,
-    );
-
-    let i2c_bus = RefCell::new(i2c);
-
-    let tx_pin = gpioa.pa2.into_alternate();
-
-    let mut tx = dp
-        .USART2
-        .tx(
-            tx_pin,
-            Config::default()
-                .baudrate(115200.bps())
-                .wordlength_8()
-                .parity_none(),
-            &clocks,
-        )
-        .unwrap();
-    
-    let mut vl53l8cx = Vl53l8cx::new_i2c(i2c::RefCellDevice::new(&i2c_bus), Lis2duxs12Address::Address1, tim1).unwrap();
-
     loop {
-        writeln!(tx, "Hello World").unwrap();
     }
 }
