@@ -1,17 +1,22 @@
-#![allow(dead_code)]
 #![no_std]
 #![no_main]
 
+use panic_halt as _; 
 use cortex_m_rt::entry;
-use stm32f4xx_hal::{pac, prelude::* };
+use stm32f4xx_hal::serial::{Config, Tx};
+use stm32f4xx_hal::prelude::*;
+use stm32f4xx_hal::pac::{self, USART2};
+
 use embedded_hal::i2c::{I2c, SevenBitAddress};
 use embedded_hal::spi::{SpiDevice, Operation};
-use panic_halt as _; 
+
+use core::fmt::Write;
 use core::convert::TryInto;
 use core::mem::size_of;
 use core::mem::size_of_val;
-use crate::buffers::*;
-use crate::consts::*;
+
+use buffers::*;
+use consts::*;
 
 mod buffers;
 mod consts;
@@ -1426,9 +1431,164 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
 
 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
+// ===================== Main ===================== 
 
+// fn display_commands_banner() {
+//     hprintln!("53L7A1 Simple Ranging demo application");
+//     hprintln!("--------------------------------------\n");
+
+//     hprintln!("Use the following keys to control application");
+//     hprintln!(" 'r' : change resolution");
+//     hprintln!(" 's' : enable signal and ambient");
+//     hprintln!(" 'c' : clear screen");
+//     hprintln!("");
+// }
+
+// fn print_result(results: &ResultsData) {
+//     let resolution: u8 = VL53L8CX_RESOLUTION_4X4;
+
+//     display_commands_banner();
+//     hprintln!("Cell Format :\n");
+//     for _ in 0..VL53L8CX_NB_TARGET_PER_ZONE {
+//         hprintln!("Distance [mm] : Status");
+
+//         if VL53L8CX_DISABLE_AMBIENT_PER_SPAD != 1 || VL53L8CX_DISABLE_SIGNAL_PER_SPAD != 1 {
+//             hprintln!("Signal [kcps/spad] : Ambient [kcps/spad]");
+//         }
+//     }
+
+//     hprint!("\n");
+
+//     for j in (0..resolution).step_by(resolution/4) {
+//         for i in 0..resolution/4 {
+//         for i = 0; i < zones_per_line; i++) 
+//       SerialPort.print(" -----------------");
+//     SerialPort.print("\n");
+    
+//     for (i = 0; i < zones_per_line; i++)
+//       SerialPort.print("|                 ");
+//     SerialPort.print("|\n");
+  
+//     for (l = 0; l < VL53L8CX_NB_TARGET_PER_ZONE; l++)
+//     {
+//       // Print distance and status 
+//       for (k = (zones_per_line - 1); k >= 0; k--)
+//       {
+//         if (Result->nb_target_detected[j+k]>0)
+//         {
+//           snprintf(report, sizeof(report),"| \033[38;5;10m%5ld\033[0m  :  %5ld ",
+//               (long)Result->distance_mm[(VL53L8CX_NB_TARGET_PER_ZONE * (j+k)) + l],
+//               (long)Result->target_status[(VL53L8CX_NB_TARGET_PER_ZONE * (j+k)) + l]);
+//               SerialPort.print(report);
+//         }
+//         else
+//         {
+//           snprintf(report, sizeof(report),"| %5s  :  %5s ", "X", "X");
+//           SerialPort.print(report);
+//         }
+//       }
+//       SerialPort.print("|\n");
+
+//       if (EnableAmbient || EnableSignal )
+//       {
+//         // Print Signal and Ambient 
+//         for (k = (zones_per_line - 1); k >= 0; k--)
+//         {
+//           if (Result->nb_target_detected[j+k]>0)
+//           {
+//             if (EnableSignal)
+//             {
+//               snprintf(report, sizeof(report),"| %5ld  :  ", (long)Result->signal_per_spad[(VL53L8CX_NB_TARGET_PER_ZONE * (j+k)) + l]);
+//               SerialPort.print(report);
+//             }
+//             else
+//             {
+//               snprintf(report, sizeof(report),"| %5s  :  ", "X");
+//               SerialPort.print(report);
+//             }
+//             if (EnableAmbient)
+//             {
+//               snprintf(report, sizeof(report),"%5ld ", (long)Result->ambient_per_spad[j+k]);
+//               SerialPort.print(report);
+//             }
+//             else
+//             {
+//               snprintf(report, sizeof(report),"%5s ", "X");
+//               SerialPort.print(report);
+//             }
+//           }
+//           else
+//           {
+//             snprintf(report, sizeof(report),"| %5s  :  %5s ", "X", "X");
+//             SerialPort.print(report);
+//           }
+//         }
+//         SerialPort.print("|\n");
+//       }
+//     }
+//   }
+//   for (i = 0; i < zones_per_line; i++)
+//    SerialPort.print(" -----------------");
+//   SerialPort.print("\n");
+// }
+
+
+
+fn display_commands_banner(tx: &mut Tx<USART2>) {
+    writeln!(tx, "53L8A1 Simple Ranging demo application").unwrap();
+    writeln!(tx, "——————————————————————————————————————\n").unwrap();
+
+    writeln!(tx, "Use the following keys to control application").unwrap();
+    writeln!(tx, " 'r' : change resolution").unwrap();
+    writeln!(tx, " 's' : enable signal and ambient").unwrap();
+    writeln!(tx, " 'c' : clear screen").unwrap();
+    writeln!(tx, "").unwrap();
+}
+
+    
 #[entry]
 fn main() -> ! {
+    
+    let dp = pac::Peripherals::take().unwrap();
+
+    let rcc = dp.RCC.constrain();
+
+    let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+    
+    let gpioa = dp.GPIOA.split();
+
+    let tx_pin = gpioa.pa2.into_alternate();
+    
+    let mut tx: Tx<pac::USART2> = dp
+    .USART2
+    .tx(
+        tx_pin,
+        Config::default()
+            .baudrate(115200.bps())
+            .wordlength_8()
+            .parity_none(),
+        &clocks,
+        )
+        .unwrap();
+    
+    writeln!(tx, "================= setup =================").unwrap();
+    
+    display_commands_banner(&mut tx);
+    writeln!(tx, "Cell Format :").unwrap();
+    writeln!(tx, "\x1b[93mDistance [mm]\x1b[0m : Status").unwrap();
+
     loop {
+        writeln!(tx, "================= loop =================").unwrap();
     }
 }
+
+
