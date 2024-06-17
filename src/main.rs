@@ -3,17 +3,27 @@
 
 use panic_halt as _; 
 use cortex_m_rt::entry;
-use stm32f4xx_hal::serial::{Config, Tx};
-use stm32f4xx_hal::prelude::*;
-use stm32f4xx_hal::pac::{self, USART2};
+use embedded_hal_bus::i2c;
+use bitfield::bitfield;
 
-use embedded_hal::i2c::{I2c, SevenBitAddress};
-use embedded_hal::spi::{SpiDevice, Operation};
+use stm32f4xx_hal::{
+    i2c::{I2c1, Mode},
+    serial::{Config, Tx},
+    prelude::*,
+    pac::{self, USART2}
+};
 
-use core::fmt::Write;
-use core::convert::TryInto;
-use core::mem::size_of;
-use core::mem::size_of_val;
+use embedded_hal::{
+    i2c::{I2c, SevenBitAddress},
+    spi::{SpiDevice, Operation}
+};
+
+use core::{
+    fmt::Write, 
+    convert::TryInto,
+    mem::{size_of, size_of_val},
+    cell::RefCell
+};
 
 use buffers::*;
 use consts::*;
@@ -92,22 +102,6 @@ pub struct ResultsData {
     target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     motion_indicator: MotionIndicator
 } 
-
-#[repr(C)]
-pub struct BlockHeader {
-    bh_type: u32,
-    bh_size: u32,
-    bh_idx: u16
-}
-
-impl BlockHeader {
-    pub fn new() -> Self {
-        let bh_type = 4;
-        let bh_size = 12;
-        let bh_idx = 16;
-        Self {bh_type, bh_size, bh_idx }
-    }
-}
 
 impl ResultsData {
     pub fn new() -> Self {
@@ -451,7 +445,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 }
             }
             delay.delay_ms(1);
-            timeout+=1;
+            timeout += 1;
             if go2_status0[0] & 0x01 != 0 {
                 return Ok(());
             }
@@ -967,7 +961,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         self.data_read_size = 0;
         self.streamcount = 255;
-        let mut bh: BlockHeader = BlockHeader::new();
+        let mut bh: BlockHeader;
 
         let mut output_bh_enable: [u32; 4] = [0x00000007, 0x00000000, 0x00000000, 0x00000000];
 
@@ -1003,17 +997,16 @@ impl<B: BusOperation> Vl53l8cx<B> {
             if output[i] == 0 || output_bh_enable[i/32] & (1 << (i%32)) == 0 {
                 continue;
             }
-// ??????????????????????
-            // bh_ptr = (union Block_header *) & (output[i]);
-            if bh.bh_type >= 0x01 && bh.bh_type < 0x0d {
-                if bh.bh_idx >= 0x54d0 && bh.bh_idx < 0x54d0 + 960 {
-                    bh.bh_size = resolution;
+            bh = BlockHeader(output[i]);
+            if bh.bh_type() >= 0x01 && bh.bh_type() < 0x0d {
+                if bh.bh_idx() >= 0x54d0 && bh.bh_idx() < 0x54d0 + 960 {
+                    bh.set_bh_size(resolution);
                 } else {
-                    bh.bh_size = resolution * VL53L8CX_NB_TARGET_PER_ZONE;
+                    bh.set_bh_size(resolution * VL53L8CX_NB_TARGET_PER_ZONE);
                 }
-                self.data_read_size += bh.bh_type * bh.bh_size;
+                self.data_read_size += bh.bh_type() * bh.bh_size();
             } else {
-                self.data_read_size += bh.bh_size;
+                self.data_read_size += bh.bh_size();
             }
             self.data_read_size += 4;
         }
@@ -1312,7 +1305,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut msize: u32;
         let mut header_id: u16;
         let mut footer_id: u16;
-        let mut bh: BlockHeader = BlockHeader::new();
+        let mut bh: BlockHeader;
         self.read_from_register_to_temp_buffer(0, self.data_read_size as usize)?;
         self.streamcount = self.temp_buffer[0];
         self.swap_temp_buffer(self.data_read_size as usize)?;
@@ -1323,49 +1316,55 @@ impl<B: BusOperation> Vl53l8cx<B> {
             if i >= self.data_read_size as usize {
                 break;
             }
-            let ptr: *const BlockHeader = self.temp_buffer[i..i+size_of_val(&bh)/size_of::<u32>()].as_ptr() as *const BlockHeader;
-            bh = unsafe { ptr.read() }; // + bitwise or
-            if bh.bh_type > 0x1 && bh.bh_type < 0xd {
-                msize = bh.bh_type * bh.bh_size;
+
+            bh = BlockHeader(
+                (self.temp_buffer[i  ] as u32) << 24 | 
+                (self.temp_buffer[i+1] as u32) << 16 | 
+                (self.temp_buffer[i+2] as u32) <<  8 | 
+                (self.temp_buffer[i+3] as u32)
+            );
+
+            if bh.bh_type() > 0x1 && bh.bh_type() < 0xd {
+                msize = bh.bh_type() * bh.bh_size();
             } else  {
-                msize = bh.bh_size;
+                msize = bh.bh_size();
             }
 
-            if bh.bh_idx == VL53L8CX_METADATA_IDX {
+            if bh.bh_idx() == VL53L8CX_METADATA_IDX as u32 {
                 result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
-            } else if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_AMBIENT_RATE_IDX {
+            } else if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_AMBIENT_RATE_IDX as u32 {
                 for (j, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
                     result.ambient_per_spad[j] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
                 }
-            } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx == VL53L8CX_SPAD_COUNT_IDX {
+            } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx() == VL53L8CX_SPAD_COUNT_IDX as u32 {
                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
                     result.nb_spads_enabled[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
                 }
-            } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx == VL53L8CX_NB_TARGET_DETECTED_IDX {
+            } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx() == VL53L8CX_NB_TARGET_DETECTED_IDX as u32 {
                 for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
                     result.nb_target_detected[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
                 }
-            } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx == VL53L8CX_SIGNAL_RATE_IDX {
+            } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_SIGNAL_RATE_IDX as u32 {
                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
                     result.signal_per_spad[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
                 }
-            } else if VL53L8CX_DISABLE_RANGE_SIGMA_MM == 0 && bh.bh_idx == VL53L8CX_RANGE_SIGMA_MM_IDX {
+            } else if VL53L8CX_DISABLE_RANGE_SIGMA_MM == 0 && bh.bh_idx() == VL53L8CX_RANGE_SIGMA_MM_IDX as u32 {
                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
                     result.range_sigma_mm[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
                 }
-            } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx == VL53L8CX_DISTANCE_IDX {
+            } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx() == VL53L8CX_DISTANCE_IDX as u32 {
                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
                     result.distance_mm[i] = (chunk[0] as i16) << 8 | (chunk[1] as i16);
                 }
-            } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx == VL53L8CX_REFLECTANCE_EST_PC_IDX {
+            } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx() == VL53L8CX_REFLECTANCE_EST_PC_IDX as u32 {
                 for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
                     result.reflectance[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
                 }
-            } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx == VL53L8CX_TARGET_STATUS_IDX {
+            } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx() == VL53L8CX_TARGET_STATUS_IDX as u32 {
                 for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
                     result.target_status[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
                 }
-            } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx == VL53L8CX_MOTION_DETEC_IDX {
+            } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx() == VL53L8CX_MOTION_DETEC_IDX as u32 {
                 let ptr: *const MotionIndicator = self.temp_buffer[i+4..i+4+msize as usize].as_ptr() as *const MotionIndicator;
                 result.motion_indicator = unsafe { ptr.read() };
             }
@@ -1428,166 +1427,120 @@ impl<B: BusOperation> Vl53l8cx<B> {
     
 }
 
-
-
-
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-// ===================== Main ===================== 
-
-// fn display_commands_banner() {
-//     hprintln!("53L7A1 Simple Ranging demo application");
-//     hprintln!("--------------------------------------\n");
-
-//     hprintln!("Use the following keys to control application");
-//     hprintln!(" 'r' : change resolution");
-//     hprintln!(" 's' : enable signal and ambient");
-//     hprintln!(" 'c' : clear screen");
-//     hprintln!("");
-// }
-
-// fn print_result(results: &ResultsData) {
-//     let resolution: u8 = VL53L8CX_RESOLUTION_4X4;
-
-//     display_commands_banner();
-//     hprintln!("Cell Format :\n");
-//     for _ in 0..VL53L8CX_NB_TARGET_PER_ZONE {
-//         hprintln!("Distance [mm] : Status");
-
-//         if VL53L8CX_DISABLE_AMBIENT_PER_SPAD != 1 || VL53L8CX_DISABLE_SIGNAL_PER_SPAD != 1 {
-//             hprintln!("Signal [kcps/spad] : Ambient [kcps/spad]");
-//         }
-//     }
-
-//     hprint!("\n");
-
-//     for j in (0..resolution).step_by(resolution/4) {
-//         for i in 0..resolution/4 {
-//         for i = 0; i < zones_per_line; i++) 
-//       SerialPort.print(" -----------------");
-//     SerialPort.print("\n");
-    
-//     for (i = 0; i < zones_per_line; i++)
-//       SerialPort.print("|                 ");
-//     SerialPort.print("|\n");
-  
-//     for (l = 0; l < VL53L8CX_NB_TARGET_PER_ZONE; l++)
-//     {
-//       // Print distance and status 
-//       for (k = (zones_per_line - 1); k >= 0; k--)
-//       {
-//         if (Result->nb_target_detected[j+k]>0)
-//         {
-//           snprintf(report, sizeof(report),"| \033[38;5;10m%5ld\033[0m  :  %5ld ",
-//               (long)Result->distance_mm[(VL53L8CX_NB_TARGET_PER_ZONE * (j+k)) + l],
-//               (long)Result->target_status[(VL53L8CX_NB_TARGET_PER_ZONE * (j+k)) + l]);
-//               SerialPort.print(report);
-//         }
-//         else
-//         {
-//           snprintf(report, sizeof(report),"| %5s  :  %5s ", "X", "X");
-//           SerialPort.print(report);
-//         }
-//       }
-//       SerialPort.print("|\n");
-
-//       if (EnableAmbient || EnableSignal )
-//       {
-//         // Print Signal and Ambient 
-//         for (k = (zones_per_line - 1); k >= 0; k--)
-//         {
-//           if (Result->nb_target_detected[j+k]>0)
-//           {
-//             if (EnableSignal)
-//             {
-//               snprintf(report, sizeof(report),"| %5ld  :  ", (long)Result->signal_per_spad[(VL53L8CX_NB_TARGET_PER_ZONE * (j+k)) + l]);
-//               SerialPort.print(report);
-//             }
-//             else
-//             {
-//               snprintf(report, sizeof(report),"| %5s  :  ", "X");
-//               SerialPort.print(report);
-//             }
-//             if (EnableAmbient)
-//             {
-//               snprintf(report, sizeof(report),"%5ld ", (long)Result->ambient_per_spad[j+k]);
-//               SerialPort.print(report);
-//             }
-//             else
-//             {
-//               snprintf(report, sizeof(report),"%5s ", "X");
-//               SerialPort.print(report);
-//             }
-//           }
-//           else
-//           {
-//             snprintf(report, sizeof(report),"| %5s  :  %5s ", "X", "X");
-//             SerialPort.print(report);
-//           }
-//         }
-//         SerialPort.print("|\n");
-//       }
-//     }
-//   }
-//   for (i = 0; i < zones_per_line; i++)
-//    SerialPort.print(" -----------------");
-//   SerialPort.print("\n");
-// }
-
-
-
-fn display_commands_banner(tx: &mut Tx<USART2>) {
-    writeln!(tx, "53L8A1 Simple Ranging demo application").unwrap();
-    writeln!(tx, "——————————————————————————————————————\n").unwrap();
-
-    writeln!(tx, "Use the following keys to control application").unwrap();
-    writeln!(tx, " 'r' : change resolution").unwrap();
-    writeln!(tx, " 's' : enable signal and ambient").unwrap();
-    writeln!(tx, " 'c' : clear screen").unwrap();
-    writeln!(tx, "").unwrap();
+fn write_first_line(tx: &mut Tx<USART2>, width: usize) {
+    write!(tx, "+-----------").unwrap();
+    for _ in 1..width {
+        write!(tx, "+-----------").unwrap();
+    }
+    writeln!(tx, "+").unwrap();
 }
 
+fn write_middle_line(tx: &mut Tx<USART2>, width: usize) {
+    write!(tx, "+-----------").unwrap();
+    for _ in 1..width {
+        write!(tx, "+-----------").unwrap();
+    }
+    writeln!(tx, "+").unwrap();
+}
+
+fn write_last_line(tx: &mut Tx<USART2>, width: usize) {
+    write!(tx, "+-----------").unwrap();
+    for _ in 1..width {
+        write!(tx, "+-----------").unwrap();
+    }
+    writeln!(tx, "+").unwrap();
+}
+
+fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
     
+    // ┼ ├ ┤ ┬ ┴ ┌ └ ┐ ┘ │ ─
+
+    writeln!(tx, "\x1B[2J").unwrap();
+
+    writeln!(tx, "\x1b[1m53L8A1 Simple Ranging demo application\x1b[0m\n").unwrap();
+    writeln!(tx, "\x1b[4mCell Format :\x1b[0m\n").unwrap();
+    writeln!(tx, "\x1b[96m{dis:20}\x1b[0m : \x1b[92m{sta:20}\x1b[0m", dis="Distance [mm]", sta="Status").unwrap();
+    writeln!(tx, "\x1b[93m{sig:20}\x1b[0m : \x1b[91m{amb:20}\x1b[0m", sig="Signal [kcps/spad]", amb="Ambient [kcps/spad]").unwrap();
+
+    write_first_line(tx, width);
+    for j in 0..width {
+        for i in 0..width {
+            write!(tx, "|\x1b[96m{dis:4}\x1b[0m : \x1b[92m{sta:4}\x1b[0m", dis=results.distance_mm[width*j+i], sta=results.target_status[width*j+i]).unwrap();
+        } write!(tx, "|\n").unwrap();
+
+        for i in 0..width {
+            write!(tx, "|\x1b[93m{sig:4}\x1b[0m : \x1b[91m{amb:4}\x1b[0m", sig=results.signal_per_spad[width*j+i], amb=results.ambient_per_spad[width*j+i]).unwrap();
+        } write!(tx, "|\n").unwrap();
+        
+        if j != width-1 {
+            write_middle_line(tx, width);
+        } else {
+            write_last_line(tx, width);
+        }
+    }
+}
+
+
+
+bitfield! {
+    struct BlockHeader(u32);
+    bh_idx, set_bh_idx: 16, 12;
+    bh_size, set_bh_size: 12, 4;
+    bh_type, set_bh_type: 4, 0;
+}
+
+
 #[entry]
 fn main() -> ! {
+    let mut results = ResultsData::new();
+    
+    let width = 4;
     
     let dp = pac::Peripherals::take().unwrap();
-
+    let cp = cortex_m::Peripherals::take().unwrap();
     let rcc = dp.RCC.constrain();
-
     let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
-    
     let gpioa = dp.GPIOA.split();
-
+    let gpiob = dp.GPIOB.split();
+    let scl = gpiob.pb8;
+    let sda = gpiob.pb9;
     let tx_pin = gpioa.pa2.into_alternate();
+    let mut delay = cp.SYST.delay(&clocks);
     
     let mut tx: Tx<pac::USART2> = dp
     .USART2
-    .tx(
-        tx_pin,
+    .tx(tx_pin,
         Config::default()
-            .baudrate(115200.bps())
-            .wordlength_8()
-            .parity_none(),
-        &clocks,
-        )
-        .unwrap();
+        .baudrate(115200.bps())
+        .wordlength_8()
+        .parity_none(),
+        &clocks)
+        .unwrap(); 
     
-    writeln!(tx, "================= setup =================").unwrap();
+    let i2c = I2c1::new(
+        dp.I2C1,
+        (scl, sda),
+        Mode::Standard { frequency:  100.kHz() },
+        &clocks);
+        
+    write_results(&mut tx, &results, width);
+
+    let i2c_bus = RefCell::new(i2c);
+    let mut sensor = Vl53l8cx::new_i2c(i2c::RefCellDevice::new(&i2c_bus), 0x52, -1, -1).unwrap();
+    let _ = sensor.begin();
+    let _ = sensor.init_sensor(0x52);
+    let _ = sensor.start_ranging();
+    let mut ready: u8 = 0;
     
-    display_commands_banner(&mut tx);
-    writeln!(tx, "Cell Format :").unwrap();
-    writeln!(tx, "\x1b[93mDistance [mm]\x1b[0m : Status").unwrap();
 
     loop {
-        writeln!(tx, "================= loop =================").unwrap();
+        loop {  
+            if ready != 0 { break; }
+            ready = sensor.check_data_ready().unwrap();
+        }
+        results = sensor.get_ranging_data().unwrap();
+        write_results(&mut tx, &results, width);
+        delay.delay_ms(1000);
     }
 }
 
