@@ -1,22 +1,9 @@
 
-
-// const VL53L8CX_API_REVISION: &str = "VL53L8CX_1.0.4";
-
-// const VL53L8CX_DEFAULT_I2C_ADDRESS: u16 = 0x52;
-
+pub const VL53L8CX_DEFAULT_I2C_ADDRESS: u8 = 0x52;
 
 pub const VL53L8CX_RESOLUTION_4X4: u8 = 16;
 pub const VL53L8CX_RESOLUTION_8X8: u8 = 64;
 
-
-pub const VL53L8CX_TARGET_ORDER_CLOSEST: u8 = 1;
-pub const VL53L8CX_TARGET_ORDER_STRONGEST: u8 = 2;
-
-pub const VL53L8CX_RANGING_MODE_CONTINUOUS: u8 = 1;
-pub const VL53L8CX_RANGING_MODE_AUTONOMOUS: u8 = 3;
-
-pub const VL53L8CX_POWER_MODE_SLEEP: u8 = 0;
-pub const VL53L8CX_POWER_MODE_WAKEUP: u8 = 1;
 
 pub const VL53L8CX_STATUS_OK: u8 = 0;
 pub const VL53L8CX_STATUS_TIMEOUT_ERROR: u8 = 1;
@@ -56,17 +43,17 @@ pub const VL53L8CX_CONFIGURATION_SIZE: usize = 972;
 pub const VL53L8CX_OFFSET_BUFFER_SIZE: usize = 488;
 pub const VL53L8CX_XTALK_BUFFER_SIZE: usize = 776;
 
+// pub const VL53L8CX_DCI_FREQ_HZ: u16 = 0x5458;
+// pub const VL53L8CX_DCI_INT_TIME: u16 = 0x545C;
+// pub const VL53L8CX_DCI_RANGING_MODE: u16 = 0xAD30;
+// pub const VL53L8CX_DCI_DSS_CONFIG: u16 = 0xAD38;
+// pub const VL53L8CX_DCI_TARGET_ORDER: u16 = 0xAE64;
+// pub const VL53L8CX_DCI_SHARPENER: u16 = 0xAED8;
+// pub const VL53L8CX_DCI_INTERNAL_CP: u16 = 0xB39C;
+// pub const VL53L8CX_DCI_SYNC_PIN: u16 = 0xB5F0;
+// pub const VL53L8CX_DCI_MOTION_DETECTOR_CFG: u16 = 0xBFAC;
 pub const VL53L8CX_DCI_ZONE_CONFIG: u16 = 0x5450;
-pub const VL53L8CX_DCI_FREQ_HZ: u16 = 0x5458;
-pub const VL53L8CX_DCI_INT_TIME: u16 = 0x545C;
 pub const VL53L8CX_DCI_FW_NB_TARGET: u16 = 0x5478;
-pub const VL53L8CX_DCI_RANGING_MODE: u16 = 0xAD30;
-pub const VL53L8CX_DCI_DSS_CONFIG: u16 = 0xAD38;
-pub const VL53L8CX_DCI_TARGET_ORDER: u16 = 0xAE64;
-pub const VL53L8CX_DCI_SHARPENER: u16 = 0xAED8;
-pub const VL53L8CX_DCI_INTERNAL_CP: u16 = 0xB39C;
-pub const VL53L8CX_DCI_SYNC_PIN: u16 = 0xB5F0;
-pub const VL53L8CX_DCI_MOTION_DETECTOR_CFG: u16 = 0xBFAC;
 pub const VL53L8CX_DCI_SINGLE_RANGE: u16 = 0xD964;
 pub const VL53L8CX_DCI_OUTPUT_CONFIG: u16 = 0xD968;
 pub const VL53L8CX_DCI_OUTPUT_ENABLES: u16 = 0xD970;
@@ -82,15 +69,15 @@ const L5CX_AMB_SIZE: usize = ((1-VL53L8CX_DISABLE_AMBIENT_PER_SPAD) * 260) as us
 const L5CX_SPAD_SIZE: usize = ((1-VL53L8CX_DISABLE_NB_SPADS_ENABLED) * 260) as usize;
 const L5CX_NTAR_SIZE: usize = ((1-VL53L8CX_DISABLE_NB_TARGET_DETECTED) * 68) as usize;
 const L5CX_SPS_SIZE: usize = ((1-VL53L8CX_DISABLE_SIGNAL_PER_SPAD) * 
-    ((256 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
+((256 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
 const L5CX_SIGR_SIZE: usize = ((1-VL53L8CX_DISABLE_RANGE_SIGMA_MM) * 
-    ((128 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
+((128 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
 const L5CX_DIST_SIZE: usize = ((1-VL53L8CX_DISABLE_DISTANCE_MM) *
-    ((128 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
+((128 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
 const L5CX_RFLEST_SIZE: usize = ((1-VL53L8CX_DISABLE_REFLECTANCE_PERCENT) *
-    ((64 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
+((64 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
 const L5CX_STA_SIZE: usize = ((1-VL53L8CX_DISABLE_TARGET_STATUS) * 
-    ((64 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
+((64 * VL53L8CX_NB_TARGET_PER_ZONE) + 4)) as usize;
 const L5CX_MOT_SIZE: usize = ((1-VL53L8CX_DISABLE_MOTION_INDICATOR) * 144) as usize;
 
 const VL53L8CX_MAX_RESULTS_SIZE: usize = 40 
@@ -98,7 +85,7 @@ const VL53L8CX_MAX_RESULTS_SIZE: usize = 40
 + L5CX_SIGR_SIZE + L5CX_DIST_SIZE + L5CX_RFLEST_SIZE + L5CX_STA_SIZE 
 + L5CX_MOT_SIZE + 20;
 
-    
+
 pub const VL53L8CX_TEMPORARY_BUFFER_SIZE: usize = 
 if 1024 < VL53L8CX_MAX_RESULTS_SIZE { 
     VL53L8CX_MAX_RESULTS_SIZE 
@@ -107,18 +94,6 @@ if 1024 < VL53L8CX_MAX_RESULTS_SIZE {
 };
 
 pub const VL53L8CX_USE_RAW_FORMAT: u8 = 0;
-
-// struct VL53L8CX_Configuration {
-//     platform: ,
-//     streamcount: u8,
-//     data_read_size: u32,
-//     default_configuration: u8,
-//     default_xtalk: u8,
-//     offset_data: [u8, VL53L8CX_OFFSET_BUFFER_SIZE],
-//     xtalk_data: [u8, VL53L8CX_XTALK_BUFFER_SIZE],
-//     temp_buffer: [u8, VL53L8CX_TEMPORARY_BUFFER_SIZE],
-//     is_auto_stop_enabled: u8,  
-// }
 
 pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 1;
 
@@ -136,12 +111,28 @@ pub const VL53L8CX_DISABLE_MOTION_INDICATOR: u32 = 0;
 
 // const DEFAULT_I2C_BUFFER_LEN: u16 = 32;
 
-// struct VL53L8CX_Platform {
-//     address: u16,
-//     dev_i2c: I2C,
-//     dev_spi: SPI,
-//     cs_pin: u32,
-//     spi_speed: u32,
-//     lpn_pin: u32,
-//     i2c_rst_pin: u32,
-// }
+
+// pub const VL53L8CX_TARGET_ORDER_CLOSEST: u8 = 1;
+// pub const VL53L8CX_TARGET_ORDER_STRONGEST: u8 = 2;
+
+// pub const VL53L8CX_RANGING_MODE_CONTINUOUS: u8 = 1;
+// pub const VL53L8CX_RANGING_MODE_AUTONOMOUS: u8 = 3;
+
+// pub const VL53L8CX_POWER_MODE_SLEEP: u8 = 0;
+// pub const VL53L8CX_POWER_MODE_WAKEUP: u8 = 1;
+
+pub const VL53L8CX_NB_THRESHOLDS: u8 = 64;
+
+pub const VL53L8CX_DCI_DET_THRESH_CONFIG: u16 = 0x5488;
+pub const VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG: u16 = 0xB6E0;
+pub const VL53L8CX_DCI_DET_THRESH_START: u16 = 0xB6E8;
+pub const VL53L8CX_DCI_DET_THRESH_VALID_STATUS: u16 = 0xB9F0;
+
+pub const VL53L8CX_DISTANCE_MM: u8 = 1;
+pub const VL53L8CX_SIGNAL_PER_SPAD_KCPS: u8 = 2;
+pub const VL53L8CX_RANGE_SIGMA_MM: u8 = 4;
+pub const VL53L8CX_AMBIENT_PER_SPAD_KCPS: u8 = 8;
+pub const VL53L8CX_NB_TARGET_DETECTED: u8 = 9;
+pub const VL53L8CX_TARGET_STATUS: u8 = 12;
+pub const VL53L8CX_NB_SPADS_ENABLED: u8 = 13;
+pub const VL53L8CX_MOTION_INDICATOR: u8 = 19;

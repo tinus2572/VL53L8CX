@@ -9,7 +9,7 @@ use bitfield::bitfield;
 use stm32f4xx_hal::{
     gpio::{DynamicPin, Pin, PinState::{High, Low}}, 
     i2c::{I2c1, Mode}, 
-    pac::{self, USART2}, 
+    pac::{self, dbgmcu::cr::R, USART2}, 
     prelude::*, 
     serial::{Config, Tx}, timer::SysDelay
 };
@@ -84,6 +84,85 @@ bitfield! {
     bh_size, set_bh_size: 12, 4;
     bh_type, set_bh_type: 4, 0;
 }
+
+#[repr(C)]
+pub struct DetectionThresholds {
+    param_low_thresh: i32,
+    param_high_thresh: i32,
+    measurement: u8,
+    th_type: u8,
+    zone_num: u8,
+    math_op: u8
+}
+
+#[repr(C)]
+pub struct MotionConfiguration {
+    ref_bin_offset: i32,
+    detection_threshold: u32,
+    extra_noise_sigma: u32,
+    null_den_clip_value: u32,
+    mem_update_mode: u8,
+    mem_update_choice: u8,
+    sum_span: u8,
+    feature_length: u8,
+    nb_of_aggregates: u8,
+    nb_of_temporal_accumulations: u8,
+    min_nb_for_global_detection: u8,
+    global_indicator_format_1: u8,
+    global_indicator_format_2: u8,
+    spare_1: u8,
+    spare_2: u8,
+    spare_3: u8,
+    map_id: [u8; 64],
+    indicator_format_1: [u8; 32],
+    indicator_format_2: [u8; 32],
+} 
+
+impl MotionConfiguration {
+    pub fn new() -> Self {
+        let ref_bin_offset = 13633;
+        let detection_threshold = 2883584;
+        let extra_noise_sigma = 0;
+        let null_den_clip_value = 0;
+        let mem_update_mode = 6;
+        let mem_update_choice = 2;
+        let sum_span = 4;
+        let feature_length = 9;
+        let nb_of_aggregates = 16;
+        let nb_of_temporal_accumulations = 16;
+        let min_nb_for_global_detection = 1;
+        let global_indicator_format_1 = 8;
+        let global_indicator_format_2 = 0;
+        let spare_1 = 0;
+        let spare_2 = 0;
+        let spare_3 = 0;
+        let map_id = [0; 64];
+        let indicator_format_1 = [0; 32];
+        let indicator_format_2 = [0; 32];
+        Self { 
+            ref_bin_offset, 
+            detection_threshold, 
+            extra_noise_sigma, 
+            null_den_clip_value, 
+            mem_update_mode, 
+            mem_update_choice, 
+            sum_span, 
+            feature_length, 
+            nb_of_aggregates, 
+            nb_of_temporal_accumulations, 
+            min_nb_for_global_detection, 
+            global_indicator_format_1, 
+            global_indicator_format_2, 
+            spare_1, 
+            spare_2, 
+            spare_3, 
+            map_id, 
+            indicator_format_1, 
+            indicator_format_2 
+        }
+    }
+}
+  
 
 #[repr(C)]
 pub struct MotionIndicator {
@@ -561,37 +640,37 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
    
-    // fn dci_read_data(&mut self, data: &mut [u8], index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
-    //     let mut cmd: [u8; 12] = [
-    //         0x00, 0x00, 0x00, 0x00,
-    //         0x00, 0x00, 0x00, 0x0f,
-    //         0x00, 0x02, 0x00, 0x08
-    //     ];
+    fn dci_read_data(&mut self, data: &mut [u8], index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
+        let mut cmd: [u8; 12] = [
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x0f,
+            0x00, 0x02, 0x00, 0x08
+        ];
 
-    //     if data_size + 12 > VL53L8CX_TEMPORARY_BUFFER_SIZE {
-    //         return Err(Error::Other);
-    //     } else {
-    //         cmd[0] = (index >> 8) as u8;
-    //         cmd[1] = (index & 0xff) as u8;
-    //         cmd[2] = ((data_size & 0xff0) >> 4) as u8;
-    //         cmd[3] = ((data_size & 0xf) << 4) as u8;
+        if data_size + 12 > VL53L8CX_TEMPORARY_BUFFER_SIZE {
+            return Err(Error::Other);
+        } else {
+            cmd[0] = (index >> 8) as u8;
+            cmd[1] = (index & 0xff) as u8;
+            cmd[2] = ((data_size & 0xff0) >> 4) as u8;
+            cmd[3] = ((data_size & 0xf) << 4) as u8;
 
-    //         /* Request data reading from FW */
-    //         self.write_multi_to_register(VL53L8CX_UI_CMD_END - 11, &cmd)?;
-    //         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
+            /* Request data reading from FW */
+            self.write_multi_to_register(VL53L8CX_UI_CMD_END - 11, &cmd)?;
+            self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
 
-    //         /* Read new data sent (4 bytes header + data_size + 8 bytes footer) */
-    //         self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_TEMPORARY_BUFFER_SIZE)?;
-    //         self.swap_temp_buffer(data_size)?;
+            /* Read new data sent (4 bytes header + data_size + 8 bytes footer) */
+            self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_TEMPORARY_BUFFER_SIZE)?;
+            self.swap_temp_buffer(data_size)?;
 
-    //         /* Copy data from FW into input structure (-4 bytes to remove header) */
-    //         for i in 0..(data_size-1) {
-    //             data[i] = self.temp_buffer[i+4];
-    //         }
-    //     }
+            /* Copy data from FW into input structure (-4 bytes to remove header) */
+            for i in 0..(data_size-1) {
+                data[i] = self.temp_buffer[i+4];
+            }
+        }
        
-    //     Ok(())
-    // }   
+        Ok(())
+    }   
     
     fn dci_read_data_temp_buffer(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut cmd: [u8; 12] = [
@@ -701,13 +780,13 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
 
-    // fn dci_replace_data(&mut self, data: &mut [u8], index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
-    //     self.dci_read_data(data, index, data_size)?;
-    //     data[new_data_pos..].copy_from_slice(&new_data[..new_data_size]);
-    //     self.dci_write_data(data, index, data_size)?;
+    fn dci_replace_data(&mut self, data: &mut [u8], index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
+        self.dci_read_data(data, index, data_size)?;
+        data[new_data_pos..].copy_from_slice(&new_data[..new_data_size]);
+        self.dci_write_data(data, index, data_size)?;
         
-    //     Ok(())
-    // }   
+        Ok(())
+    }   
     
     fn dci_replace_data_temp_buffer(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
         self.dci_read_data_temp_buffer(index, data_size)?;
@@ -1414,8 +1493,171 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn delay(&mut self, ms: u32) {
         self.delay.delay_ms(ms);
     }
+
+
+
+    // fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
+    //     let enabled: u8;
+    //     self.dci_read_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
+    //     enabled = self.temp_buffer[0x1];
+    //     Ok(enabled)
+    // }
+
+    // fn set_detection_threshholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
+    //     let mut grp_global_config: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
+    //     let mut tmp: [u8; 1] = [0];
+    //     if enabled == 1 {
+    //         grp_global_config[0x01] = 0x01;
+    //         tmp[0] = 0x04;
+    //     } else {
+    //         grp_global_config[0x01] = 0x00;
+    //         tmp[0] = 0x0C;
+    //     }
+    //     /* Set global interrupt config */
+    //     self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8, &grp_global_config, 4, 0x00)?;
+    //     /* Update interrupt config */
+    //     self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_CONFIG, 20, &tmp, 1, 0x11)?;
+    //     Ok(())
+    // }
+
+    // fn get_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
+    //     let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
+    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+    //         arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
+    //         arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
+    //         arr[i+8] = thresholds[i].measurement;
+    //         arr[i+9] = thresholds[i].th_type;
+    //         arr[i+10] = thresholds[i].zone_num;
+    //         arr[i+11] = thresholds[i].math_op;
+    //     }
+
+    //     self.dci_read_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
+        
+    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+    //         thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
+    //         thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
+    //         thresholds[i].measurement = arr[i+8];
+    //         thresholds[i].th_type = arr[i+9];
+    //         thresholds[i].zone_num = arr[i+10];
+    //         thresholds[i].math_op = arr[i+11];
+    //     }
+        
+    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+    //         if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
+    //             thresholds[i].param_low_thresh  /= 4;
+    //             thresholds[i].param_high_thresh /= 4;
+    //         } else if thresholds[i].measurement == VL53L8CX_SIGNAL_PER_SPAD_KCPS {
+    //             thresholds[i].param_low_thresh  /= 2048;
+    //             thresholds[i].param_high_thresh /= 2048;
+    //         } else if thresholds[i].measurement == VL53L8CX_RANGE_SIGMA_MM {
+    //             thresholds[i].param_low_thresh  /= 128;
+    //             thresholds[i].param_high_thresh /= 128;
+    //         } else if thresholds[i].measurement == VL53L8CX_AMBIENT_PER_SPAD_KCPS {
+    //             thresholds[i].param_low_thresh  /= 2048;
+    //             thresholds[i].param_high_thresh /= 2048;
+    //         } else if thresholds[i].measurement == VL53L8CX_NB_SPADS_ENABLED {
+    //             thresholds[i].param_low_thresh  /= 256;
+    //             thresholds[i].param_high_thresh /= 256;
+    //         } else if thresholds[i].measurement == VL53L8CX_MOTION_INDICATOR {
+    //             thresholds[i].param_low_thresh  /= 65535;
+    //             thresholds[i].param_high_thresh /= 65535;
+    //         }
+    //     }
+    //     Ok(())
+    // }
+
+    // fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
+    //     let mut grp_valid_target_cfg: [u8; 8] = [0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05];
+    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+    //         if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
+    //             thresholds[i].param_low_thresh  *= 4;
+    //             thresholds[i].param_high_thresh *= 4;
+    //         } else if thresholds[i].measurement == VL53L8CX_SIGNAL_PER_SPAD_KCPS {
+    //             thresholds[i].param_low_thresh  *= 2048;
+    //             thresholds[i].param_high_thresh *= 2048;
+    //         } else if thresholds[i].measurement == VL53L8CX_RANGE_SIGMA_MM {
+    //             thresholds[i].param_low_thresh  *= 128;
+    //             thresholds[i].param_high_thresh *= 128;
+    //         } else if thresholds[i].measurement == VL53L8CX_AMBIENT_PER_SPAD_KCPS {
+    //             thresholds[i].param_low_thresh  *= 2048;
+    //             thresholds[i].param_high_thresh *= 2048;
+    //         } else if thresholds[i].measurement == VL53L8CX_NB_SPADS_ENABLED {
+    //             thresholds[i].param_low_thresh  *= 256;
+    //             thresholds[i].param_high_thresh *= 256;
+    //         } else if thresholds[i].measurement == VL53L8CX_MOTION_INDICATOR {
+    //             thresholds[i].param_low_thresh  *= 65535;
+    //             thresholds[i].param_high_thresh *= 65535;
+    //         }
+    //     } 
+    //     self.dci_write_data(&mut grp_valid_target_cfg, VL53L8CX_DCI_DET_THRESH_VALID_STATUS, 8)?;
+        
+        
+    //     let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
+    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+    //         arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
+    //         arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
+    //         arr[i+8] = thresholds[i].measurement;
+    //         arr[i+9] = thresholds[i].th_type;
+    //         arr[i+10] = thresholds[i].zone_num;
+    //         arr[i+11] = thresholds[i].math_op;
+    //     }
+
+    //     self.dci_write_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
+        
+    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+    //         thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
+    //         thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
+    //         thresholds[i].measurement = arr[i+8];
+    //         thresholds[i].th_type = arr[i+9];
+    //         thresholds[i].zone_num = arr[i+10];
+    //         thresholds[i].math_op = arr[i+11];
+    //     }
+
+    //     Ok(())
+    // }
+
+    // fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
+    //     self.dci_read_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
+    //     let auto_stop: u8 = self.temp_buffer[0x03];
+    //     Ok(auto_stop)
+    // }
+    
+    // fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
+    //     let tmp: [u8; 1] = [auto_stop];
+    //     self.dci_replace_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
+    //     Ok(auto_stop)
+    // }
+
+    fn motion_indicator_init(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+        let motion_config = MotionConfiguration::new();
+        self.motion_indicator_set_resolution(motion_config, resolution)?;
+        Ok(())
+    }
+
+    fn motion_indicator_set_resolution(&mut self, motion_config: MotionConfiguration, resolution: u8) -> Result<(), Error<B::Error>> {
+        // if resolution == VL53L8CX_RESOLUTION_4X4 {
+        //     for 
+        // }
+        Ok(())
+    }
+
 }
 
+
+
+
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
+//================== Main and related functions ==================
 //================== Main and related functions ==================
 
 fn write_line(tx: &mut Tx<USART2>, width: usize) {
@@ -1453,6 +1695,7 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
             write_line(tx, width);
         }
     }
+
 }
 
 #[entry]
@@ -1483,21 +1726,25 @@ fn main() -> ! {
         &clocks)
         .unwrap(); 
     
-    let mut i2c = I2c1::new(
+    let i2c = I2c1::new(
         dp.I2C1,
         (scl, sda),
         Mode::Standard { frequency:  400.kHz() },
         &clocks);
-        
-    i2c.write(0x52, &[0x0]).unwrap();
-        
-    //==================================================================================================================
-
 
     write_results(&mut tx, &results, width);
 
     let i2c_bus = RefCell::new(i2c);
-    let mut sensor = Vl53l8cx::new_i2c(i2c::RefCellDevice::new(&i2c_bus), 0x52, lpn_pin, -1, delay).unwrap();
+    let address = VL53L8CX_DEFAULT_I2C_ADDRESS;
+    let i2c_rst_pin = -1;
+    let mut sensor = 
+        Vl53l8cx::new_i2c(
+            i2c::RefCellDevice::new(&i2c_bus), 
+            address, 
+            lpn_pin, 
+            i2c_rst_pin, 
+            delay
+        ).unwrap();
 
 
     let _ = sensor.begin();
