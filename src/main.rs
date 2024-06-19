@@ -7,11 +7,7 @@ use embedded_hal_bus::i2c;
 use bitfield::bitfield;
 
 use stm32f4xx_hal::{
-    gpio::{DynamicPin, Pin, PinState::{High, Low}}, 
-    i2c::{I2c1, Mode}, 
-    pac::{self, dbgmcu::cr::R, USART2}, 
-    prelude::*, 
-    serial::{Config, Tx}, timer::SysDelay
+    gpio::{DynamicPin, Output, Pin, PinState::{High, Low}, PushPull}, i2c::{I2c1, Mode}, pac::{self, USART2}, prelude::*, serial::{Config, Tx}, timer::SysDelay
 };
 
 use embedded_hal::{
@@ -20,10 +16,7 @@ use embedded_hal::{
 };
 
 use core::{
-    fmt::Write, 
-    convert::TryInto,
-    mem::{size_of, size_of_val},
-    cell::RefCell
+    cell::RefCell, convert::TryInto, fmt::Write, mem::{size_of, size_of_val}
 };
 
 use buffers::*;
@@ -42,11 +35,10 @@ pub struct Vl53l8cx<B: BusOperation> {
     temp_buffer: [u8;  VL53L8CX_TEMPORARY_BUFFER_SIZE],
     offset_data: [u8;  VL53L8CX_OFFSET_BUFFER_SIZE],
     xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE],
-
     streamcount: u8,
     data_read_size: u32,
 
-    lpn_pin: DynamicPin<'B', 0>,
+    lpn_pin: Pin<'B', 0, Output<PushPull>>,
     i2c_rst_pin: i8,
     
     bus: B,
@@ -113,7 +105,7 @@ pub struct MotionConfiguration {
     spare_1: u8,
     spare_2: u8,
     spare_3: u8,
-    map_id: [u8; 64],
+    map_id: [i8; 64],
     indicator_format_1: [u8; 32],
     indicator_format_2: [u8; 32],
 } 
@@ -294,9 +286,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
     fn read_from_register(&mut self, reg: u16, rbuf: &mut [u8]) -> Result<(), Error<B::Error>> {
         let a: u8 = (reg >> 8).try_into().unwrap();
         let b: u8 = (reg & 0xFF).try_into().unwrap(); 
-        self.bus
-            .write_read(&[a, b], rbuf)
-            .map_err(Error::Bus)?;
+        self.bus.write_read(&[a, b], rbuf).map_err(Error::Bus)?;
 
         Ok(())
     }
@@ -316,9 +306,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let a: u8 = (reg >> 8).try_into().unwrap();
         let b: u8 = (reg & 0xFF).try_into().unwrap(); 
         let wbuf = [a, b, val];
-        self.bus
-            .write(&wbuf)
-            .map_err(Error::Bus)?;
+        self.bus.write(&wbuf).map_err(Error::Bus)?;
        
         Ok(())
     }
@@ -354,10 +342,10 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
     where
     P: I2c,
 {
-    pub fn new_i2c(i2c: P, address: u8, lpn_pin: DynamicPin<'B', 0>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
+    pub fn new_i2c(i2c: P, address: SevenBitAddress, lpn_pin: Pin<'B', 0, Output<PushPull>>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
-        let bus: Vl53l8cxI2C<P> = Vl53l8cxI2C::new(i2c, address as SevenBitAddress);
+        let bus: Vl53l8cxI2C<P> = Vl53l8cxI2C::new(i2c, address);
         let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
         let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
@@ -375,9 +363,9 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
         Ok(instance)
     }
 
-    pub fn set_i2c_address(&mut self, i2c_address: u8) -> Result<(), Error<P::Error>> {
+    pub fn set_i2c_address(&mut self, i2c_address: SevenBitAddress) -> Result<(), Error<P::Error>> {
         self.write_to_register(0x7fff, 0x00)?;
-        self.write_to_register(0x4, i2c_address >> 1)?;
+        self.write_to_register(0x4, i2c_address)?;
         self.bus.address = i2c_address;
         self.write_to_register(0x7fff, 0x02)?;
         
@@ -394,13 +382,13 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
     }
 
     pub fn begin(&mut self) -> Result<(), Error<P::Error>> {
-        self.lpn_pin.make_push_pull_output_in_state(Low);
+        self.lpn_pin.set_low();
         // self.i2c_rst_pin.into_push_pull_output().set_low();
         Ok(())
     }
 
     pub fn end(&mut self) -> Result<(), Error<P::Error>> {
-        self.lpn_pin.make_floating_input();
+        // self.lpn_pin.make_floating_input();
         // self.i2c_rst_pin.into_input();
         Ok(())
     }
@@ -409,7 +397,7 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
 impl<P> Vl53l8cx<Vl53l8cxSPI<P>> 
     where P: SpiDevice,
 {
-    pub fn new_spi(spi: P, cs_pin: DynamicPin<'B', 6>, lpn_pin: DynamicPin<'B', 0>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
+    pub fn new_spi(spi: P, cs_pin: DynamicPin<'B', 6>, lpn_pin: Pin<'B', 0, Output<PushPull>>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
         let bus: Vl53l8cxSPI<P> = Vl53l8cxSPI::new(spi, cs_pin);
@@ -440,14 +428,14 @@ impl<P> Vl53l8cx<Vl53l8cxSPI<P>>
     }
     
     pub fn begin(&mut self) -> Result<(), Error<P::Error>> {
-        self.lpn_pin.make_push_pull_output_in_state(Low);
+        self.lpn_pin.set_low();
         // self.i2c_rst_pin.into_push_pull_output().set_low();
         self.bus.cs_pin.make_push_pull_output_in_state(High);
         Ok(())
     }
 
     pub fn end(&mut self) -> Result<(), Error<P::Error>> {
-        self.lpn_pin.make_floating_input();
+        // self.lpn_pin.make_floating_input();
         // self.i2c_rst_pin.into_input();
         self.bus.cs_pin.make_floating_input();
         Ok(())
@@ -459,13 +447,13 @@ impl<P> Vl53l8cx<Vl53l8cxSPI<P>>
 impl<B: BusOperation> Vl53l8cx<B> {
 
     pub fn on(&mut self) -> Result<(), Error<B::Error>>{
-        self.lpn_pin.set_high().unwrap();
+        self.lpn_pin.set_high();
         self.delay(10);
         Ok(())
     }
 
     pub fn off(&mut self) -> Result<(), Error<B::Error>>{
-        self.lpn_pin.set_low().unwrap();
+        self.lpn_pin.set_low();
         self.delay(10);
         Ok(())
     }
@@ -479,9 +467,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.delay(10);
         Ok(())
     }
-
-    
-
 
     fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
@@ -944,87 +929,87 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
-    // fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
-    //     let power_mode: u8;
-    //     let mut tmp: [u8; 1] = [0];
-    //     self.write_to_register(0x7fff, 0x00)?;
-    //     self.read_from_register(0x009, &mut tmp)?;    
-    //     if tmp[0] == 0x4 {
-    //         power_mode = VL53L8CX_POWER_MODE_WAKEUP;
-    //     } else if tmp[0] == 0x2 {
-    //         power_mode = VL53L8CX_POWER_MODE_SLEEP;
-    //     } else {
-    //         return Err(Error::Other);
-    //     }
-    //     self.write_to_register(0x7fff, 0x02)?;
+    fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
+        let power_mode: u8;
+        let mut tmp: [u8; 1] = [0];
+        self.write_to_register(0x7fff, 0x00)?;
+        self.read_from_register(0x009, &mut tmp)?;    
+        if tmp[0] == 0x4 {
+            power_mode = VL53L8CX_POWER_MODE_WAKEUP;
+        } else if tmp[0] == 0x2 {
+            power_mode = VL53L8CX_POWER_MODE_SLEEP;
+        } else {
+            return Err(Error::Other);
+        }
+        self.write_to_register(0x7fff, 0x02)?;
         
-    //     Ok(power_mode)
-    // }
+        Ok(power_mode)
+    }
     
-    // fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
-    //     let current_power_mode: u8 = self.get_power_mode()?;
-    //     if power_mode != current_power_mode {
-    //         if power_mode == VL53L8CX_POWER_MODE_WAKEUP {
-    //             self.write_to_register(0x7fff, 0x00)?;
-    //             self.write_to_register(0x09, 0x04)?;
-    //             self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
-    //         } else if power_mode == VL53L8CX_POWER_MODE_SLEEP {
-    //             self.write_to_register(0x7fff, 0x00)?;
-    //             self.write_to_register(0x09, 0x02)?;
-    //             self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
-    //         } else {
-    //             return Err(Error::Other);
-    //         }
-    //     }
-    //     self.write_to_register(0x7fff, 0x02)?;
+    fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
+        let current_power_mode: u8 = self.get_power_mode()?;
+        if power_mode != current_power_mode {
+            if power_mode == VL53L8CX_POWER_MODE_WAKEUP {
+                self.write_to_register(0x7fff, 0x00)?;
+                self.write_to_register(0x09, 0x04)?;
+                self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
+            } else if power_mode == VL53L8CX_POWER_MODE_SLEEP {
+                self.write_to_register(0x7fff, 0x00)?;
+                self.write_to_register(0x09, 0x02)?;
+                self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
+            } else {
+                return Err(Error::Other);
+            }
+        }
+        self.write_to_register(0x7fff, 0x02)?;
         
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    fn get_resolution(&mut self) -> Result<u32, Error<B::Error>> {
+    fn get_resolution(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-        let resolution: u32 = (self.temp_buffer[0x00] * self.temp_buffer[0x01]) as u32;
+        let resolution: u8 = self.temp_buffer[0x00] * self.temp_buffer[0x01];
 
         Ok(resolution)
     }
 
-    // fn set_resolution(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    fn set_resolution(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
 
-    //     if resolution == VL53L8CX_RESOLUTION_4X4 {
-    //         self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-    //         self.temp_buffer[0x04] = 64;
-    //         self.temp_buffer[0x06] = 64;
-    //         self.temp_buffer[0x09] = 4;
-    //         self.dci_write_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-    //         self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-    //         self.temp_buffer[0x00] = 4;
-    //         self.temp_buffer[0x01] = 4;
-    //         self.temp_buffer[0x04] = 8;
-    //         self.temp_buffer[0x05] = 8;
-    //         self.dci_write_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-    //     } else if resolution == VL53L8CX_RESOLUTION_8X8 {
-    //         self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-    //         self.temp_buffer[0x04] = 16;
-    //         self.temp_buffer[0x06] = 16;
-    //         self.temp_buffer[0x09] = 1;
-    //         self.dci_write_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-    //         self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 8)?;
-    //         self.temp_buffer[0x00] = 8;
-    //         self.temp_buffer[0x01] = 8;
-    //         self.temp_buffer[0x04] = 4;
-    //         self.temp_buffer[0x05] = 4;
-    //         self.dci_write_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-    //     } else {
-    //         return Err(Error::Other);
-    //     }
-    //     self.send_offset_data(resolution)?;
-    //     self.send_xtalk_data(resolution)?;
+        if resolution == VL53L8CX_RESOLUTION_4X4 {
+            self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+            self.temp_buffer[0x04] = 64;
+            self.temp_buffer[0x06] = 64;
+            self.temp_buffer[0x09] = 4;
+            self.dci_write_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+            self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+            self.temp_buffer[0x00] = 4;
+            self.temp_buffer[0x01] = 4;
+            self.temp_buffer[0x04] = 8;
+            self.temp_buffer[0x05] = 8;
+            self.dci_write_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
+        } else if resolution == VL53L8CX_RESOLUTION_8X8 {
+            self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+            self.temp_buffer[0x04] = 16;
+            self.temp_buffer[0x06] = 16;
+            self.temp_buffer[0x09] = 1;
+            self.dci_write_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+            self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 8)?;
+            self.temp_buffer[0x00] = 8;
+            self.temp_buffer[0x01] = 8;
+            self.temp_buffer[0x04] = 4;
+            self.temp_buffer[0x05] = 4;
+            self.dci_write_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
+        } else {
+            return Err(Error::Other);
+        }
+        self.send_offset_data(resolution)?;
+        self.send_xtalk_data(resolution)?;
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     fn start_ranging(&mut self) -> Result<(), Error<B::Error>> {
-        let resolution: u32 = self.get_resolution()?;
+        let resolution: u8 = self.get_resolution()?;
         let mut tmp: [u16; 1] = [0];
         let mut header_config: [u32; 2] = [0, 0];
         let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];
@@ -1070,9 +1055,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
             bh = BlockHeader(output[i]);
             if bh.bh_type() >= 0x01 && bh.bh_type() < 0x0d {
                 if bh.bh_idx() >= 0x54d0 && bh.bh_idx() < 0x54d0 + 960 {
-                    bh.set_bh_size(resolution);
+                    bh.set_bh_size(resolution as u32);
                 } else {
-                    bh.set_bh_size(resolution * VL53L8CX_NB_TARGET_PER_ZONE);
+                    bh.set_bh_size(resolution as u32 * VL53L8CX_NB_TARGET_PER_ZONE);
                 }
                 self.data_read_size += bh.bh_type() * bh.bh_size();
             } else {
@@ -1102,10 +1087,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         for (i, chunk) in buf.chunks(4).enumerate() {
             header_config[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
         }
+        let mut buf: [u8; 16] = [0; 16];
         for (i, &num) in output_bh_enable.iter().enumerate() {
             buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
         }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_ENABLES, output_bh_enable.len())?;
+        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
         for (i, chunk) in buf.chunks(4).enumerate() {
             output_bh_enable[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
         }
@@ -1138,212 +1124,212 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
-//     fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
-//         let mut timeout: u16 = 0;
-//         let mut auto_flag_stop: [u32; 1] = [0];
-//         let mut buf: [u8; 4] = [0; 4];
-//         let mut tmp: [u8; 1] = [0];
+    fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
+        let mut timeout: u16 = 0;
+        let mut auto_flag_stop: [u32; 1] = [0];
+        let mut buf: [u8; 4] = [0; 4];
+        let mut tmp: [u8; 1] = [0];
 
-//         self.read_from_register(0x2ffc, &mut buf)?;
-//         for (i, chunk) in buf.chunks(4).enumerate() {
-//             auto_flag_stop[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-//         }
+        self.read_from_register(0x2ffc, &mut buf)?;
+        for (i, chunk) in buf.chunks(4).enumerate() {
+            auto_flag_stop[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+        }
 
-//         if auto_flag_stop[0] != 0x4ff {
-//             self.write_to_register(0x7fff, 0x00)?;
+        if auto_flag_stop[0] != 0x4ff {
+            self.write_to_register(0x7fff, 0x00)?;
 
-//             /* Provoke MCU stop */
-//             self.write_to_register(0x15, 0x16)?;
-//             self.write_to_register(0x14, 0x01)?;
+            /* Provoke MCU stop */
+            self.write_to_register(0x15, 0x16)?;
+            self.write_to_register(0x14, 0x01)?;
 
-//             /* Poll for G02 status 0 MCU stop */
-//             loop {
-//                 if tmp[0] & (0x80 as u8) >> 7 == 0x00 {
-//                     break;
-//                 }
+            /* Poll for G02 status 0 MCU stop */
+            loop {
+                if tmp[0] & (0x80 as u8) >> 7 == 0x00 {
+                    break;
+                }
 
-//                 self.read_from_register(0x6, &mut tmp)?;
-//                 self.delay(10);
-//                 timeout += 1;
+                self.read_from_register(0x6, &mut tmp)?;
+                self.delay(10);
+                timeout += 1;
 
-//                 if timeout > 500 {
-//                     break;
-//                 }
-//             }
-//         }
+                if timeout > 500 {
+                    break;
+                }
+            }
+        }
 
-//         /* Check GO2 status 1 if status is still OK */
-//         self.read_from_register(0x6, &mut tmp)?;
-//         if tmp[0] & 0x80 != 0 {
-//             self.read_from_register(0x7, &mut tmp)?;
-//             if tmp[0] != 0x84 && tmp[0] != 0x85 {
-//                 return Ok(());
-//             }
-//         }
+        /* Check GO2 status 1 if status is still OK */
+        self.read_from_register(0x6, &mut tmp)?;
+        if tmp[0] & 0x80 != 0 {
+            self.read_from_register(0x7, &mut tmp)?;
+            if tmp[0] != 0x84 && tmp[0] != 0x85 {
+                return Ok(());
+            }
+        }
 
-//         /* Undo MCU stop */
-//         self.write_to_register(0x7fff, 0x00)?;
-//         self.write_to_register(0x14, 0x00)?;
-//         self.write_to_register(0x15, 0x00)?;
+        /* Undo MCU stop */
+        self.write_to_register(0x7fff, 0x00)?;
+        self.write_to_register(0x14, 0x00)?;
+        self.write_to_register(0x15, 0x00)?;
 
-//         /* Stop xshut bypass */
-//         self.write_to_register(0x09, 0x04)?;
-//         self.write_to_register(0x7fff, 0x02)?;
+        /* Stop xshut bypass */
+        self.write_to_register(0x09, 0x04)?;
+        self.write_to_register(0x7fff, 0x02)?;
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     fn set_external_sync_pin_enable(&mut self, enable_sync_pin: u8) -> Result<(), Error<B::Error>> {
-//         let mut tmp: [u32; 1] = [0];
-//         self.read_from_register_to_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
-//         for (i, chunk) in self.temp_buffer[3..3+4].chunks(4).enumerate() {
-//             tmp[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-//         }
-//         /* Update bit 1 with mask (set sync pause bit) */
-//         if enable_sync_pin == 0 {
-//             tmp[0] &= !(1 << 1);
-//         } else {
-//             tmp[0] |= 1 << 1;
-//         }
+    fn set_external_sync_pin_enable(&mut self, enable_sync_pin: u8) -> Result<(), Error<B::Error>> {
+        let mut tmp: [u32; 1] = [0];
+        self.read_from_register_to_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
+        for (i, chunk) in self.temp_buffer[3..3+4].chunks(4).enumerate() {
+            tmp[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+        }
+        /* Update bit 1 with mask (set sync pause bit) */
+        if enable_sync_pin == 0 {
+            tmp[0] &= !(1 << 1);
+        } else {
+            tmp[0] |= 1 << 1;
+        }
 
-//         self.temp_buffer[3] = tmp[0] as u8;
-//         self.dci_write_data_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
+        self.temp_buffer[3] = tmp[0] as u8;
+        self.dci_write_data_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     fn get_external_sync_pin_enable(&mut self) -> Result<u8, Error<B::Error>> {
-//         let is_sync_pin_enabled: u8;
-//         self.dci_read_data_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
+    fn get_external_sync_pin_enable(&mut self) -> Result<u8, Error<B::Error>> {
+        let is_sync_pin_enabled: u8;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
 
-//         /* Check bit 1 value (get sync pause bit) */
-//         if self.temp_buffer[3] & 0x2 != 0 {
-//             is_sync_pin_enabled = 1;
-//         } else {
-//             is_sync_pin_enabled = 0;
-//         }
+        /* Check bit 1 value (get sync pause bit) */
+        if self.temp_buffer[3] & 0x2 != 0 {
+            is_sync_pin_enabled = 1;
+        } else {
+            is_sync_pin_enabled = 0;
+        }
         
-//         Ok(is_sync_pin_enabled)
-//     }
+        Ok(is_sync_pin_enabled)
+    }
 
-//     fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
-//         let target_order: u8;
-//         self.dci_read_data_temp_buffer(VL53L8CX_DCI_TARGET_ORDER, 4)?;
-//         target_order = self.temp_buffer[0];
+    fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
+        let target_order: u8;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_TARGET_ORDER, 4)?;
+        target_order = self.temp_buffer[0];
 
-//         Ok(target_order)
-//     }
+        Ok(target_order)
+    }
 
-//     fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
-//         if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
-//             self.dci_replace_data_temp_buffer(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order], 1, 0x0)?;
-//         } else {
-//             return Err(Error::Other);
-//         }
-//         Ok(())
-//     }
+    fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
+        if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
+            self.dci_replace_data_temp_buffer(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order], 1, 0x0)?;
+        } else {
+            return Err(Error::Other);
+        }
+        Ok(())
+    }
 
-//     fn get_sharpener_percent(&mut self) -> Result<u8, Error<B::Error>> {
-//         let sharpener_percent: u8;
-//         self.dci_read_data_temp_buffer(VL53L8CX_DCI_SHARPENER, 16)?;
-//         sharpener_percent = self.temp_buffer[0xD] * 100 / 255;
+    fn get_sharpener_percent(&mut self) -> Result<u8, Error<B::Error>> {
+        let sharpener_percent: u8;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_SHARPENER, 16)?;
+        sharpener_percent = self.temp_buffer[0xD] * 100 / 255;
 
-//         Ok(sharpener_percent)
-//     }
+        Ok(sharpener_percent)
+    }
 
-//     fn set_sharpener_percent(&mut self, sharpener_percent: u8) -> Result<(), Error<B::Error>> {
-//         let sharpener: u8;
-//         if sharpener_percent >= 100 {
-//             return Err(Error::Other);
-//         }
-//         sharpener = sharpener_percent * 255 / 100;
-//         self.dci_replace_data_temp_buffer(VL53L8CX_DCI_SHARPENER, 16, &[sharpener], 1, 0xd)?;
+    fn set_sharpener_percent(&mut self, sharpener_percent: u8) -> Result<(), Error<B::Error>> {
+        let sharpener: u8;
+        if sharpener_percent >= 100 {
+            return Err(Error::Other);
+        }
+        sharpener = sharpener_percent * 255 / 100;
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_SHARPENER, 16, &[sharpener], 1, 0xd)?;
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     fn get_integration_time(&mut self) -> Result<u32, Error<B::Error>> {
-//         let mut time_ms: [u32; 1] = [0];
-//         self.dci_read_data_temp_buffer(VL53L8CX_DCI_INT_TIME, 20)?;
-//         for (i, chunk) in self.temp_buffer[..4].chunks(4).enumerate() {
-//             time_ms[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-//         }
-//         time_ms[0] /= 1000;
+    fn get_integration_time(&mut self) -> Result<u32, Error<B::Error>> {
+        let mut time_ms: [u32; 1] = [0];
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_INT_TIME, 20)?;
+        for (i, chunk) in self.temp_buffer[..4].chunks(4).enumerate() {
+            time_ms[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+        }
+        time_ms[0] /= 1000;
         
-//         Ok(time_ms[0])
-//     }
+        Ok(time_ms[0])
+    }
 
-//     fn set_integration_time(&mut self, integration_time_ms: u32) -> Result<(), Error<B::Error>> {
-//         let mut integration: u32 = integration_time_ms;
+    fn set_integration_time(&mut self, integration_time_ms: u32) -> Result<(), Error<B::Error>> {
+        let mut integration: u32 = integration_time_ms;
 
-//         /* Integration time must be between 2ms and 1000ms */
-//         if integration < 2 || integration > 1000 {
-//             return Err(Error::Other);
-//         }
-//         integration *= 1000;
+        /* Integration time must be between 2ms and 1000ms */
+        if integration < 2 || integration > 1000 {
+            return Err(Error::Other);
+        }
+        integration *= 1000;
         
-//         let mut buf: [u8; 4] = [0; 4];
-//         let tmp: [u32; 1] = [integration];
-//         for (i, &num) in tmp.iter().enumerate() {
-//             buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-//         }
-//         self.dci_replace_data_temp_buffer(VL53L8CX_DCI_INT_TIME, 20, &buf, 4, 0x00)?;
+        let mut buf: [u8; 4] = [0; 4];
+        let tmp: [u32; 1] = [integration];
+        for (i, &num) in tmp.iter().enumerate() {
+            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+        }
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_INT_TIME, 20, &buf, 4, 0x00)?;
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     fn get_ranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
-//         let ranging_mode: u8;
-//         self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
-//         if self.temp_buffer[1] == 1 {
-//             ranging_mode = VL53L8CX_RANGING_MODE_CONTINUOUS;
-//         } else {
-//             ranging_mode = VL53L8CX_RANGING_MODE_AUTONOMOUS;
-//         }
-//         Ok(ranging_mode)
-//     }
+    fn get_ranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
+        let ranging_mode: u8;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
+        if self.temp_buffer[1] == 1 {
+            ranging_mode = VL53L8CX_RANGING_MODE_CONTINUOUS;
+        } else {
+            ranging_mode = VL53L8CX_RANGING_MODE_AUTONOMOUS;
+        }
+        Ok(ranging_mode)
+    }
 
-//     fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
-//         let single_range: u32;
-//         self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
+    fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
+        let single_range: u32;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
 
-//         if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
-//             self.temp_buffer[1] = 1;
-//             self.temp_buffer[3] = 3;
-//             single_range = 0;
-//         } else if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
-//             self.temp_buffer[1] = 3;
-//             self.temp_buffer[3] = 2;
-//             single_range = 1;
-//         } else {
-//             return Err(Error::Other);
-//         }
+        if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
+            self.temp_buffer[1] = 1;
+            self.temp_buffer[3] = 3;
+            single_range = 0;
+        } else if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
+            self.temp_buffer[1] = 3;
+            self.temp_buffer[3] = 2;
+            single_range = 1;
+        } else {
+            return Err(Error::Other);
+        }
 
-//         self.dci_write_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
-// // TODO 
-//         let mut buf: [u8; 4] = [0; 4];
-//         let tmp: [u32; 1] = [single_range]; 
-//         for (i, &num) in tmp.iter().enumerate() {
-//             buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-//         }
-//         self.dci_write_data(&mut buf, VL53L8CX_DCI_SINGLE_RANGE, 4)?;
+        self.dci_write_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
+// TODO 
+        let mut buf: [u8; 4] = [0; 4];
+        let tmp: [u32; 1] = [single_range]; 
+        for (i, &num) in tmp.iter().enumerate() {
+            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+        }
+        self.dci_write_data(&mut buf, VL53L8CX_DCI_SINGLE_RANGE, 4)?;
         
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     fn get_frequency_hz(&mut self) -> Result<u8, Error<B::Error>> {
-//         self.dci_read_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4)?;
-//         let frequency_hz: u8 = self.temp_buffer[0x01];
+    fn get_frequency_hz(&mut self) -> Result<u8, Error<B::Error>> {
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4)?;
+        let frequency_hz: u8 = self.temp_buffer[0x01];
 
-//         Ok(frequency_hz)
-//     }
+        Ok(frequency_hz)
+    }
 
-//     fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
-//         let tmp: [u8; 1] = [frequency_hz];
-//         self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4, &tmp, 1, 0x01)?;
+    fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
+        let tmp: [u8; 1] = [frequency_hz];
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4, &tmp, 1, 0x01)?;
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
     fn check_data_ready(&mut self) -> Result<u8, Error<B::Error>> {
         let is_ready: u8;
@@ -1494,150 +1480,450 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.delay.delay_ms(ms);
     }
 
+    fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
+        let enabled: u8;
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
+        enabled = self.temp_buffer[0x1];
+        Ok(enabled)
+    }
 
+    fn set_detection_threshholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
+        let mut grp_global_config: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
+        let mut tmp: [u8; 1] = [0];
+        if enabled == 1 {
+            grp_global_config[0x01] = 0x01;
+            tmp[0] = 0x04;
+        } else {
+            grp_global_config[0x01] = 0x00;
+            tmp[0] = 0x0C;
+        }
+        /* Set global interrupt config */
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8, &grp_global_config, 4, 0x00)?;
+        /* Update interrupt config */
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_CONFIG, 20, &tmp, 1, 0x11)?;
+        Ok(())
+    }
 
-    // fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
-    //     let enabled: u8;
-    //     self.dci_read_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
-    //     enabled = self.temp_buffer[0x1];
-    //     Ok(enabled)
-    // }
+    fn get_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
+        let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
+        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+            arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
+            arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
+            arr[i+8] = thresholds[i].measurement;
+            arr[i+9] = thresholds[i].th_type;
+            arr[i+10] = thresholds[i].zone_num;
+            arr[i+11] = thresholds[i].math_op;
+        }
 
-    // fn set_detection_threshholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
-    //     let mut grp_global_config: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
-    //     let mut tmp: [u8; 1] = [0];
-    //     if enabled == 1 {
-    //         grp_global_config[0x01] = 0x01;
-    //         tmp[0] = 0x04;
-    //     } else {
-    //         grp_global_config[0x01] = 0x00;
-    //         tmp[0] = 0x0C;
-    //     }
-    //     /* Set global interrupt config */
-    //     self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8, &grp_global_config, 4, 0x00)?;
-    //     /* Update interrupt config */
-    //     self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_CONFIG, 20, &tmp, 1, 0x11)?;
-    //     Ok(())
-    // }
-
-    // fn get_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
-    //     let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
-    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-    //         arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
-    //         arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
-    //         arr[i+8] = thresholds[i].measurement;
-    //         arr[i+9] = thresholds[i].th_type;
-    //         arr[i+10] = thresholds[i].zone_num;
-    //         arr[i+11] = thresholds[i].math_op;
-    //     }
-
-    //     self.dci_read_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
+        self.dci_read_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
         
-    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-    //         thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
-    //         thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
-    //         thresholds[i].measurement = arr[i+8];
-    //         thresholds[i].th_type = arr[i+9];
-    //         thresholds[i].zone_num = arr[i+10];
-    //         thresholds[i].math_op = arr[i+11];
-    //     }
+        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+            thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
+            thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
+            thresholds[i].measurement = arr[i+8];
+            thresholds[i].th_type = arr[i+9];
+            thresholds[i].zone_num = arr[i+10];
+            thresholds[i].math_op = arr[i+11];
+        }
         
-    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-    //         if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
-    //             thresholds[i].param_low_thresh  /= 4;
-    //             thresholds[i].param_high_thresh /= 4;
-    //         } else if thresholds[i].measurement == VL53L8CX_SIGNAL_PER_SPAD_KCPS {
-    //             thresholds[i].param_low_thresh  /= 2048;
-    //             thresholds[i].param_high_thresh /= 2048;
-    //         } else if thresholds[i].measurement == VL53L8CX_RANGE_SIGMA_MM {
-    //             thresholds[i].param_low_thresh  /= 128;
-    //             thresholds[i].param_high_thresh /= 128;
-    //         } else if thresholds[i].measurement == VL53L8CX_AMBIENT_PER_SPAD_KCPS {
-    //             thresholds[i].param_low_thresh  /= 2048;
-    //             thresholds[i].param_high_thresh /= 2048;
-    //         } else if thresholds[i].measurement == VL53L8CX_NB_SPADS_ENABLED {
-    //             thresholds[i].param_low_thresh  /= 256;
-    //             thresholds[i].param_high_thresh /= 256;
-    //         } else if thresholds[i].measurement == VL53L8CX_MOTION_INDICATOR {
-    //             thresholds[i].param_low_thresh  /= 65535;
-    //             thresholds[i].param_high_thresh /= 65535;
-    //         }
-    //     }
-    //     Ok(())
-    // }
+        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+            if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
+                thresholds[i].param_low_thresh  /= 4;
+                thresholds[i].param_high_thresh /= 4;
+            } else if thresholds[i].measurement == VL53L8CX_SIGNAL_PER_SPAD_KCPS {
+                thresholds[i].param_low_thresh  /= 2048;
+                thresholds[i].param_high_thresh /= 2048;
+            } else if thresholds[i].measurement == VL53L8CX_RANGE_SIGMA_MM {
+                thresholds[i].param_low_thresh  /= 128;
+                thresholds[i].param_high_thresh /= 128;
+            } else if thresholds[i].measurement == VL53L8CX_AMBIENT_PER_SPAD_KCPS {
+                thresholds[i].param_low_thresh  /= 2048;
+                thresholds[i].param_high_thresh /= 2048;
+            } else if thresholds[i].measurement == VL53L8CX_NB_SPADS_ENABLED {
+                thresholds[i].param_low_thresh  /= 256;
+                thresholds[i].param_high_thresh /= 256;
+            } else if thresholds[i].measurement == VL53L8CX_MOTION_INDICATOR {
+                thresholds[i].param_low_thresh  /= 65535;
+                thresholds[i].param_high_thresh /= 65535;
+            }
+        }
+        Ok(())
+    }
 
-    // fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
-    //     let mut grp_valid_target_cfg: [u8; 8] = [0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05];
-    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-    //         if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
-    //             thresholds[i].param_low_thresh  *= 4;
-    //             thresholds[i].param_high_thresh *= 4;
-    //         } else if thresholds[i].measurement == VL53L8CX_SIGNAL_PER_SPAD_KCPS {
-    //             thresholds[i].param_low_thresh  *= 2048;
-    //             thresholds[i].param_high_thresh *= 2048;
-    //         } else if thresholds[i].measurement == VL53L8CX_RANGE_SIGMA_MM {
-    //             thresholds[i].param_low_thresh  *= 128;
-    //             thresholds[i].param_high_thresh *= 128;
-    //         } else if thresholds[i].measurement == VL53L8CX_AMBIENT_PER_SPAD_KCPS {
-    //             thresholds[i].param_low_thresh  *= 2048;
-    //             thresholds[i].param_high_thresh *= 2048;
-    //         } else if thresholds[i].measurement == VL53L8CX_NB_SPADS_ENABLED {
-    //             thresholds[i].param_low_thresh  *= 256;
-    //             thresholds[i].param_high_thresh *= 256;
-    //         } else if thresholds[i].measurement == VL53L8CX_MOTION_INDICATOR {
-    //             thresholds[i].param_low_thresh  *= 65535;
-    //             thresholds[i].param_high_thresh *= 65535;
-    //         }
-    //     } 
-    //     self.dci_write_data(&mut grp_valid_target_cfg, VL53L8CX_DCI_DET_THRESH_VALID_STATUS, 8)?;
+    fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
+        let mut grp_valid_target_cfg: [u8; 8] = [0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05];
+        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+            if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
+                thresholds[i].param_low_thresh  *= 4;
+                thresholds[i].param_high_thresh *= 4;
+            } else if thresholds[i].measurement == VL53L8CX_SIGNAL_PER_SPAD_KCPS {
+                thresholds[i].param_low_thresh  *= 2048;
+                thresholds[i].param_high_thresh *= 2048;
+            } else if thresholds[i].measurement == VL53L8CX_RANGE_SIGMA_MM {
+                thresholds[i].param_low_thresh  *= 128;
+                thresholds[i].param_high_thresh *= 128;
+            } else if thresholds[i].measurement == VL53L8CX_AMBIENT_PER_SPAD_KCPS {
+                thresholds[i].param_low_thresh  *= 2048;
+                thresholds[i].param_high_thresh *= 2048;
+            } else if thresholds[i].measurement == VL53L8CX_NB_SPADS_ENABLED {
+                thresholds[i].param_low_thresh  *= 256;
+                thresholds[i].param_high_thresh *= 256;
+            } else if thresholds[i].measurement == VL53L8CX_MOTION_INDICATOR {
+                thresholds[i].param_low_thresh  *= 65535;
+                thresholds[i].param_high_thresh *= 65535;
+            }
+        } 
+        self.dci_write_data(&mut grp_valid_target_cfg, VL53L8CX_DCI_DET_THRESH_VALID_STATUS, 8)?;
         
         
-    //     let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
-    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-    //         arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
-    //         arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
-    //         arr[i+8] = thresholds[i].measurement;
-    //         arr[i+9] = thresholds[i].th_type;
-    //         arr[i+10] = thresholds[i].zone_num;
-    //         arr[i+11] = thresholds[i].math_op;
-    //     }
+        let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
+        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+            arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
+            arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
+            arr[i+8] = thresholds[i].measurement;
+            arr[i+9] = thresholds[i].th_type;
+            arr[i+10] = thresholds[i].zone_num;
+            arr[i+11] = thresholds[i].math_op;
+        }
 
-    //     self.dci_write_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
+        self.dci_write_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
         
-    //     for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-    //         thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
-    //         thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
-    //         thresholds[i].measurement = arr[i+8];
-    //         thresholds[i].th_type = arr[i+9];
-    //         thresholds[i].zone_num = arr[i+10];
-    //         thresholds[i].math_op = arr[i+11];
-    //     }
+        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+            thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
+            thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
+            thresholds[i].measurement = arr[i+8];
+            thresholds[i].th_type = arr[i+9];
+            thresholds[i].zone_num = arr[i+10];
+            thresholds[i].math_op = arr[i+11];
+        }
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
-    //     self.dci_read_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
-    //     let auto_stop: u8 = self.temp_buffer[0x03];
-    //     Ok(auto_stop)
-    // }
+    fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
+        let auto_stop: u8 = self.temp_buffer[0x03];
+        Ok(auto_stop)
+    }
     
-    // fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
-    //     let tmp: [u8; 1] = [auto_stop];
-    //     self.dci_replace_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
-    //     Ok(auto_stop)
-    // }
+    fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
+        let tmp: [u8; 1] = [auto_stop];
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
+        Ok(auto_stop)
+    }
 
     fn motion_indicator_init(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
-        let motion_config = MotionConfiguration::new();
-        self.motion_indicator_set_resolution(motion_config, resolution)?;
+        let mut motion_config = MotionConfiguration::new();
+        self.motion_indicator_set_resolution(&mut motion_config, resolution)?;
         Ok(())
     }
 
-    fn motion_indicator_set_resolution(&mut self, motion_config: MotionConfiguration, resolution: u8) -> Result<(), Error<B::Error>> {
-        // if resolution == VL53L8CX_RESOLUTION_4X4 {
-        //     for 
-        // }
+    fn motion_indicator_set_resolution(&mut self, motion_config: &mut MotionConfiguration, resolution: u8) -> Result<(), Error<B::Error>> {
+        if resolution == VL53L8CX_RESOLUTION_4X4 {
+            for i in 0..VL53L8CX_RESOLUTION_4X4 as usize {
+                motion_config.map_id[i] = i as i8;
+            }
+            for i in 16..VL53L8CX_RESOLUTION_4X4 as usize {
+                motion_config.map_id[i] = -1;
+            }
+        } else if resolution == VL53L8CX_RESOLUTION_8X8 {
+            for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
+                motion_config.map_id[i] =  (i as i8 % 8) / 2 + 4 * (i as i8 / 16);
+            } 
+        } else {
+            return Err(Error::Other);
+        }
+
+        let mut arr: [u8; 156] = [0; 156];
+
+        arr[..4].copy_from_slice(&motion_config.ref_bin_offset.to_ne_bytes());
+        arr[4..8].copy_from_slice(&motion_config.detection_threshold.to_ne_bytes());
+        arr[8..12].copy_from_slice(&motion_config.extra_noise_sigma.to_ne_bytes());
+        arr[12..16].copy_from_slice(&motion_config.null_den_clip_value.to_ne_bytes());
+        arr[16] = motion_config.mem_update_mode;
+        arr[17] = motion_config.mem_update_choice;
+        arr[18] = motion_config.sum_span;
+        arr[19] = motion_config.feature_length;
+        arr[20] = motion_config.nb_of_aggregates;
+        arr[21] = motion_config.nb_of_temporal_accumulations;
+        arr[22] = motion_config.min_nb_for_global_detection;
+        arr[23] = motion_config.global_indicator_format_1;
+        arr[24] = motion_config.global_indicator_format_2;
+        arr[25] = motion_config.spare_1;
+        arr[26] = motion_config.spare_2;
+        arr[27] = motion_config.spare_3;
+        for i in 0..64 {
+            arr[28+i] = motion_config.map_id[i] as u8;
+        }
+        for i in 0..32 {
+            arr[92+i] = motion_config.indicator_format_1[i];
+            arr[124+i] = motion_config.indicator_format_2[i];
+        }
+
+        self.dci_write_data(&mut arr, VL53L8CX_DCI_MOTION_DETECTOR_CFG, 156)?;
+        
+        motion_config.ref_bin_offset = (arr[0] as i32) << 24 | (arr[1] as i32) << 16 | (arr[2] as i32) << 8 | (arr[3] as i32);
+        motion_config.detection_threshold = (arr[4] as u32) << 24 | (arr[5] as u32) << 16 | (arr[6] as u32) << 8 | (arr[7] as u32);
+        motion_config.extra_noise_sigma = (arr[8] as u32) << 24 | (arr[9] as u32) << 16 | (arr[10] as u32) << 8 | (arr[11] as u32);
+        motion_config.null_den_clip_value = (arr[12] as u32) << 24 | (arr[13] as u32) << 16 | (arr[14] as u32) << 8 | (arr[15] as u32);
+        motion_config.mem_update_mode = arr[16];
+        motion_config.mem_update_choice = arr[17];
+        motion_config.sum_span = arr[18];
+        motion_config.feature_length = arr[19];
+        motion_config.nb_of_aggregates = arr[20];
+        motion_config.nb_of_temporal_accumulations = arr[21];
+        motion_config.min_nb_for_global_detection = arr[22];
+        motion_config.global_indicator_format_1 = arr[23];
+        motion_config.global_indicator_format_2 = arr[24];
+        motion_config.spare_1 = arr[25];
+        motion_config.spare_2 = arr[26];
+        motion_config.spare_3 = arr[27];
+        for i in 0..64 {
+            motion_config.map_id[i] = arr[28+i] as i8;
+        }
+        for i in 0..32 {
+            motion_config.indicator_format_1[i] = arr[92+i];
+            motion_config.indicator_format_2[i] = arr[124+i];
+        }
+        
+        Ok(())
+    }
+
+    fn poll_for_answer_xtalk(&mut self, address: u16, expected_val: u8) -> Result<(), Error<B::Error>> {
+        let mut timeout: u32 = 0;
+        loop {
+            if self.temp_buffer[1] == expected_val {
+                break;
+            }
+            self.read_from_register_to_temp_buffer(address, 4)?;
+            self.delay(10);
+            if timeout >= 200 || self.temp_buffer[2] >= 0x7f {
+                return Err(Error::Other);
+            } 
+            timeout += 1; 
+        }
+        Ok(())
+    }
+
+    fn program_output_config(&mut self) -> Result<(), Error<B::Error>> {
+        let mut header_config: [u32; 2] = [0, 0];
+        let resolution = self.get_resolution()?;
+        let mut bh: BlockHeader;
+        self.data_read_size = 0;
+        /* Enable mandatory output (meta and common data) */
+        let mut output_bh_enable: [u32; 4] = [
+            0x0001FFFF,
+            0x00000000,
+            0x00000000,
+            0xC0000000
+            ];
+            
+            /* Send addresses of possible output */
+        let mut output: [u32; 17] = [
+            0x0000000D,
+            0x54000040,
+            0x9FD800C0,
+            0x9FE40140,
+            0x9FF80040,
+            0x9FFC0404,
+            0xA0FC0100,
+            0xA10C0100,
+            0xA11C00C0,
+            0xA1280902,
+            0xA2480040,
+            0xA24C0081,
+            0xA2540081,
+            0xA25C0081,
+            0xA2640081,
+            0xA26C0084,
+            0xA28C0082
+        ];
+        
+        for i in 0..17 {
+            if output[i] == 0 || (output_bh_enable[0] & 1 << i) == 0 { 
+                continue;
+            }
+            bh = BlockHeader(output[i]);
+            if bh.bh_type() >= 0x1 && bh.bh_type() < 0x0d {
+                if bh.bh_idx() >= 0x54d0 && bh.bh_idx() < 0x54d0 + 960 {
+                    bh.set_bh_size(resolution as u32);
+                } else {
+                    bh.set_bh_size(resolution as u32 * VL53L8CX_NB_TARGET_PER_ZONE);
+                }
+                self.data_read_size += bh.bh_type() * bh.bh_size();
+            } else {
+                self.data_read_size += bh.bh_size();
+            }
+            self.data_read_size += 4;
+        }
+        self.data_read_size += 24;
+
+        let mut buf: [u8; 68] = [0; 68];
+        for (i, &num) in output.iter().enumerate() {
+            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+        }
+        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_LIST, 68)?;
+        for (i, chunk) in buf.chunks(4).enumerate() {
+            output[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+        }
+
+        header_config[0] = self.data_read_size;
+        header_config[1] = 17;
+
+        
+        let mut buf: [u8; 8] = [0; 8];
+        for (i, &num) in header_config.iter().enumerate() {
+            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+        }
+        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
+        for (i, chunk) in buf.chunks(4).enumerate() {
+            header_config[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+        }
+        let mut buf: [u8; 16] = [0; 16];
+        for (i, &num) in output_bh_enable.iter().enumerate() {
+            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+        }
+        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
+        for (i, chunk) in buf.chunks(4).enumerate() {
+            output_bh_enable[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+        }
+                
+        Ok(())
+    }
+
+    fn get_xtalk_margin(&mut self) -> Result<u32, Error<B::Error>> {
+        self.dci_read_data_temp_buffer(VL53L8CX_DCI_XTALK_CFG, 16)?;
+        let mut xtalk_margin: u32 = (self.temp_buffer[0] as u32) << 24 | (self.temp_buffer[1] as u32) << 16 | (self.temp_buffer[2] as u32) << 8 | self.temp_buffer[3] as u32;
+        xtalk_margin /= 2048;
+        Ok(xtalk_margin)
+    }
+     
+    fn set_xtalk_margin(&mut self, xtalk_margin: u32) -> Result<(), Error<B::Error>> {
+        let mut margin_kcps: [u8; 4] = [0; 4];
+        margin_kcps.copy_from_slice(&(xtalk_margin<<11).to_ne_bytes());
+        if xtalk_margin > 10000 {
+            return Err(Error::Other);
+        }
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_XTALK_CFG, 16, &margin_kcps, 4, 0)?;
+
+        Ok(())
+    }
+    
+    fn calibrate_xtalk(&mut self, reflectance_percent: u16, nb_samples: u8, distance_mm: u16) -> Result<(), Error<B::Error>> {
+        let mut timeout: u16 = 0;
+        let mut continue_loop: u8 = 1;
+        let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];
+        let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
+        let mut reflectance = reflectance_percent;
+        let mut distance = distance_mm;
+        let mut samples = nb_samples;
+        let resolution = self.get_resolution()?;
+        let frequency = self.get_frequency_hz()?;
+        let sharpener_percent = self.get_sharpener_percent()?;
+        let integration_time_ms = self.get_integration_time()?;
+        let target_order = self.get_target_order()?;
+        let xtalk_margin = self.get_xtalk_margin()?;
+        let ranging_mode = self.get_ranging_mode()?;
+
+        /* Check input arguments validity */
+        if reflectance < 1 || reflectance > 99
+            || distance < 600 || distance > 3000
+            || samples < 1 || samples > 16 {
+            return Err(Error::Other);
+        }
+        self.set_resolution(VL53L8CX_RESOLUTION_8X8)?;
+
+        /* Send Xtalk calibration buffer */
+        self.temp_buffer[..984].copy_from_slice(&VL53L8CX_CALIBRATE_XTALK);
+        self.write_multi_to_register_temp_buffer(0x2c28, 984)?;
+        self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
+
+        /* Format input argument */
+        reflectance *= 16;
+        distance *= 4;
+
+        /* Update required fields */
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_CAL_CFG, 8, &distance.to_ne_bytes(), 2, 0)?;
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_CAL_CFG, 8, &reflectance.to_ne_bytes(), 2, 2)?;
+        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_CAL_CFG, 8, &[samples], 1, 4)?;
+
+        /* Program output for Xtalk calibration */
+        self.program_output_config()?;
+
+        /* Start ranging session */
+        self.write_multi_to_register(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
+        self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
+
+        /* Wait for end of calibration */
+        loop {
+            if continue_loop != 1 {
+                break;
+            }
+            self.read_from_register_to_temp_buffer(0, 4)?;
+            if self.temp_buffer[0] != VL53L8CX_STATUS_ERROR {
+                /* Coverglass too good for Xtalk calibration */
+                if self.temp_buffer[2] >= 0x7f && self.temp_buffer[3] & 0x80 >> 7 == 1 {
+// TODO
+                    // self.default_xtalk = 
+                }
+                continue_loop = 0;
+            } else if timeout >= 400 {
+// TODO         
+                continue_loop = 0;
+                return Err(Error::Other);
+            } else {
+                timeout += 1;
+                self.delay(50);
+            }
+        }
+
+        /* Save Xtalk data into the Xtalk buffer */
+        self.temp_buffer[..72].copy_from_slice(&VL53L8CX_GET_XTALK_CMD);
+        self.write_multi_to_register_temp_buffer(0x2fb8, 72)?;
+        self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
+        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_XTALK_BUFFER_SIZE+4)?;
+        self.xtalk_data[..VL53L8CX_XTALK_BUFFER_SIZE-8].copy_from_slice(&self.temp_buffer[8..VL53L8CX_XTALK_BUFFER_SIZE]);
+        self.xtalk_data[VL53L8CX_XTALK_BUFFER_SIZE-8..].copy_from_slice(&footer);
+
+        /* Reset default buffer */
+        self.write_multi_to_register(0x2c34, &VL53L8CX_DEFAULT_CONFIGURATION)?;
+        self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
+
+        /* Reset initial configuration */
+        self.set_resolution(resolution)?;
+        self.set_frequency_hz(frequency)?;
+        self.set_integration_time(integration_time_ms)?;
+        self.set_sharpener_percent(sharpener_percent)?;
+        self.set_target_order(target_order)?;
+        self.set_xtalk_margin(xtalk_margin)?;
+        self.set_ranging_mode(ranging_mode)?;
+
+        Ok(())
+    }
+
+    fn get_caldata_xtalk(&mut self) -> Result<[u8; VL53L8CX_XTALK_BUFFER_SIZE], Error<B::Error>> {
+        let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
+        let mut xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
+        let resolution = self.get_resolution()?;
+        self.set_resolution(VL53L8CX_RESOLUTION_8X8)?;
+
+        self.temp_buffer[..72].copy_from_slice(&VL53L8CX_GET_XTALK_CMD);
+        self.write_multi_to_register_temp_buffer(0x2fb8, 72)?;
+        self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
+        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_XTALK_BUFFER_SIZE+4)?;
+        xtalk_data[..VL53L8CX_XTALK_BUFFER_SIZE-8].copy_from_slice(&self.temp_buffer[8..VL53L8CX_XTALK_BUFFER_SIZE]);
+        xtalk_data[VL53L8CX_XTALK_BUFFER_SIZE-8..].copy_from_slice(&footer);
+
+        self.set_resolution(resolution)?;
+
+        Ok(xtalk_data)
+    }
+
+    fn set_caldata_xtalk(&mut self, xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE]) -> Result<(), Error<B::Error>> {
+        let resolution = self.get_resolution()?;
+        self.xtalk_data.copy_from_slice(&xtalk_data);
+        self.set_resolution(resolution)?;
+
         Ok(())
     }
 
@@ -1645,56 +1931,51 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
 
 
-
 //================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-//================== Main and related functions ==================
-
-fn write_line(tx: &mut Tx<USART2>, width: usize) {
-    write!(tx, "+-----------").unwrap();
-    for _ in 1..width {
-        write!(tx, "+-----------").unwrap();
-    }
-    writeln!(tx, "+").unwrap();
-}
 
 fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
-    
+
     // ┼ ├ ┤ ┬ ┴ ┌ └ ┐ ┘ │ ─
 
     writeln!(tx, "\x1B[2J").unwrap();
 
-    writeln!(tx, "\x1b[1m53L8A1 Simple Ranging demo application\x1b[0m\n").unwrap();
-    writeln!(tx, "\x1b[4mCell Format :\x1b[0m\n").unwrap();
-    writeln!(tx, "\x1b[96m{dis:20}\x1b[0m : \x1b[92m{sta:20}\x1b[0m", dis="Distance [mm]", sta="Status").unwrap();
-    writeln!(tx, "\x1b[93m{sig:20}\x1b[0m : \x1b[91m{amb:20}\x1b[0m", sig="Signal [kcps/spad]", amb="Ambient [kcps/spad]").unwrap();
+    writeln!(tx, "VL53L8A1 Simple Ranging demo application\n").unwrap();
+    writeln!(tx, "Cell Format :\n").unwrap();
+    writeln!(
+        tx, 
+        "\x1b[96m{dis:>20}\x1b[0m : \x1b[92m{sta:<20}\x1b[0m", 
+        dis="Distance [mm]", 
+        sta="Status"
+    ).unwrap();
+    writeln!(
+        tx, 
+        "\x1b[93m{sig:>20}\x1b[0m : \x1b[91m{amb:<20}\x1b[0m", 
+        sig="Signal [kcps/spad]", 
+        amb="Ambient [kcps/spad]"
+    ).unwrap();
 
-    write_line(tx, width);
     for j in 0..width {
+        for _ in 0..width { write!(tx, "+-----------").unwrap(); } writeln!(tx, "+").unwrap();
+        
         for i in 0..width {
-            write!(tx, "|\x1b[96m{dis:4}\x1b[0m : \x1b[92m{sta:4}\x1b[0m", dis=results.distance_mm[width*j+i], sta=results.target_status[width*j+i]).unwrap();
+            write!(
+                tx, 
+                "|\x1b[96m{dis:>4}\x1b[0m : \x1b[92m{sta:<4}\x1b[0m", 
+                dis=results.distance_mm[width*j+i], 
+                sta=results.target_status[width*j+i]
+            ).unwrap();
         } write!(tx, "|\n").unwrap();
 
         for i in 0..width {
-            write!(tx, "|\x1b[93m{sig:4}\x1b[0m : \x1b[91m{amb:4}\x1b[0m", sig=results.signal_per_spad[width*j+i], amb=results.ambient_per_spad[width*j+i]).unwrap();
+            write!(
+                tx, 
+                "|\x1b[93m{sig:>4}\x1b[0m : \x1b[91m{amb:<4}\x1b[0m", 
+                sig=results.signal_per_spad[width*j+i], 
+                amb=results.ambient_per_spad[width*j+i]
+            ).unwrap();
         } write!(tx, "|\n").unwrap();
-        
-        if j != width-1 {
-            write_line(tx, width);
-        } else {
-            write_line(tx, width);
-        }
     }
+    for _ in 0..width { write!(tx, "+-----------").unwrap(); } writeln!(tx, "+").unwrap();
 
 }
 
@@ -1710,9 +1991,10 @@ fn main() -> ! {
     let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
     let gpioa = dp.GPIOA.split();
     let gpiob = dp.GPIOB.split();
+    let mut pwr_pin= gpioa.pa7.into_push_pull_output();
     let scl: Pin<'B', 8> = gpiob.pb8;
     let sda: Pin<'B', 9> = gpiob.pb9;
-    let lpn_pin: DynamicPin<'B', 0> = gpiob.pb0.into_dynamic();
+    let lpn_pin= gpiob.pb0.into_push_pull_output();
     let tx_pin = gpioa.pa2.into_alternate();
     let delay = cp.SYST.delay(&clocks);
     
@@ -1735,7 +2017,7 @@ fn main() -> ! {
     write_results(&mut tx, &results, width);
 
     let i2c_bus = RefCell::new(i2c);
-    let address = VL53L8CX_DEFAULT_I2C_ADDRESS;
+    let address: SevenBitAddress = VL53L8CX_DEFAULT_I2C_ADDRESS;
     let i2c_rst_pin = -1;
     let mut sensor = 
         Vl53l8cx::new_i2c(
@@ -1746,20 +2028,24 @@ fn main() -> ! {
             delay
         ).unwrap();
 
+    pwr_pin.set_high();
 
-    let _ = sensor.begin();
-    let _ = sensor.init_sensor(0x52);
-    let _ = sensor.start_ranging();
-    let mut ready: u8 = 0;
+    sensor.begin().unwrap();
+    
+    sensor.init_sensor(VL53L8CX_DEFAULT_I2C_ADDRESS).unwrap();
+    
+    sensor.start_ranging().unwrap();
+    
+    // let mut ready: u8 = 0;
     
     loop {
-        loop {  
-            if ready != 0 { break; }
-            ready = sensor.check_data_ready().unwrap();
-        }
-        results = sensor.get_ranging_data().unwrap();
-        write_results(&mut tx, &results, width);
-        sensor.delay(1000);
+        // loop {  
+        //     if ready != 0 { break; }
+        //     ready = sensor.check_data_ready().unwrap();
+        // }
+        // results = sensor.get_ranging_data().unwrap();
+        // write_results(&mut tx, &results, width);
+        // sensor.delay(1000);
     }
 }
 
