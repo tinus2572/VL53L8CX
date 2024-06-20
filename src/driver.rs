@@ -5,14 +5,66 @@ use buffers::*;
 use core::{
     convert::TryInto, mem::{size_of, size_of_val}
 };
+
 use stm32f4xx_hal::prelude::*;
-use crate::{consts, buffers, BusOperation, Vl53l8cx, Error, bitfield, ResultsData, MotionIndicator};
+
+use crate::{consts, buffers, BusOperation, bitfield, MotionIndicator, SysDelay, Output, PushPull, Pin};
 
 bitfield! {
     struct BlockHeader(u32);
     bh_idx, set_bh_idx: 16, 12;
     bh_size, set_bh_size: 12, 4;
     bh_type, set_bh_type: 4, 0;
+}
+
+pub struct Vl53l8cx<B: BusOperation> {
+    pub temp_buffer: [u8;  VL53L8CX_TEMPORARY_BUFFER_SIZE],
+    pub offset_data: [u8;  VL53L8CX_OFFSET_BUFFER_SIZE],
+    pub xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE],
+    pub streamcount: u8,
+    pub data_read_size: u32,
+
+    pub lpn_pin: Pin<'B', 0, Output<PushPull>>,
+    pub i2c_rst_pin: i8,
+    
+    pub bus: B,
+    pub delay: SysDelay
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Error<B> {
+    Bus(B),
+    Other,
+}
+
+#[repr(C)]
+pub struct ResultsData {
+    pub silicon_temp_degc: i8,
+    pub ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
+    pub nb_target_detected: [u8; VL53L8CX_RESOLUTION_8X8 as usize],
+    pub nb_spads_enabled: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
+    pub signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    pub range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    pub distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    pub reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    pub target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    pub motion_indicator: MotionIndicator
+} 
+
+impl ResultsData {
+    pub fn new() -> Self {
+        let silicon_temp_degc: i8 = 0;
+        let ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
+        let nb_target_detected:[u8; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
+        let nb_spads_enabled:[u32; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
+        let signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
+        let motion_indicator: MotionIndicator = MotionIndicator::new();
+        Self { silicon_temp_degc, ambient_per_spad, nb_spads_enabled, nb_target_detected, signal_per_spad, range_sigma_mm, distance_mm, reflectance, target_status, motion_indicator }
+    }
 }
 
 impl<B: BusOperation> Vl53l8cx<B> {
@@ -251,6 +303,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn i2c_reset(&mut self) -> Result<(), Error<B::Error>>{
         // self.i2c_rst_pin.set_low();
         self.delay(10);
@@ -275,6 +328,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
    
+    #[allow(dead_code)]
     pub fn dci_read_data(&mut self, data: &mut [u8], index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut cmd: [u8; 12] = [
             0x00, 0x00, 0x00, 0x00,
@@ -415,6 +469,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
 
+    #[allow(dead_code)]
     pub fn dci_replace_data(&mut self, data: &mut [u8], index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
         self.dci_read_data(data, index, data_size)?;
         data[new_data_pos..].copy_from_slice(&new_data[..new_data_size]);
@@ -561,6 +616,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
         let power_mode: u8;
         let mut tmp: [u8; 1] = [0];
@@ -578,6 +634,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(power_mode)
     }
     
+    #[allow(dead_code)]
     pub fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
         let current_power_mode: u8 = self.get_power_mode()?;
         if power_mode != current_power_mode {
@@ -598,6 +655,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_resolution(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
         let resolution: u8 = self.temp_buffer[0x00] * self.temp_buffer[0x01];
@@ -605,6 +663,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(resolution)
     }
 
+    #[allow(dead_code)]
     pub fn set_resolution(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
 
         if resolution == VL53L8CX_RESOLUTION_4X4 {
@@ -756,6 +815,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
         let mut auto_flag_stop: [u32; 1] = [0];
@@ -811,6 +871,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn get_external_sync_pin_enable(&mut self) -> Result<u8, Error<B::Error>> {
         let is_sync_pin_enabled: u8;
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
@@ -825,6 +886,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(is_sync_pin_enabled)
     }
 
+    #[allow(dead_code)]
     pub fn set_external_sync_pin_enable(&mut self, enable_sync_pin: u8) -> Result<(), Error<B::Error>> {
         let mut tmp: [u32; 1] = [0];
         self.read_from_register_to_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
@@ -844,6 +906,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
         let target_order: u8;
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_TARGET_ORDER, 4)?;
@@ -852,6 +915,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(target_order)
     }
 
+    #[allow(dead_code)]
     pub fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
         if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
             self.dci_replace_data_temp_buffer(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order], 1, 0x0)?;
@@ -861,6 +925,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_sharpener_percent(&mut self) -> Result<u8, Error<B::Error>> {
         let sharpener_percent: u8;
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_SHARPENER, 16)?;
@@ -869,6 +934,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(sharpener_percent)
     }
 
+    #[allow(dead_code)]
     pub fn set_sharpener_percent(&mut self, sharpener_percent: u8) -> Result<(), Error<B::Error>> {
         let sharpener: u8;
         if sharpener_percent >= 100 {
@@ -880,6 +946,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_integration_time(&mut self) -> Result<u32, Error<B::Error>> {
         let mut time_ms: [u32; 1] = [0];
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_INT_TIME, 20)?;
@@ -891,6 +958,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(time_ms[0])
     }
 
+    #[allow(dead_code)]
     pub fn set_integration_time(&mut self, integration_time_ms: u32) -> Result<(), Error<B::Error>> {
         let mut integration: u32 = integration_time_ms;
 
@@ -910,6 +978,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_ranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
         let ranging_mode: u8;
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
@@ -921,6 +990,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(ranging_mode)
     }
 
+    #[allow(dead_code)]
     pub fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
         let single_range: u32;
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
@@ -949,13 +1019,15 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_frequency_hz(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4)?;
         let frequency_hz: u8 = self.temp_buffer[0x01];
 
         Ok(frequency_hz)
     }
-
+    
+    #[allow(dead_code)]
     pub fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
         let tmp: [u8; 1] = [frequency_hz];
         self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FREQ_HZ, 4, &tmp, 1, 0x01)?;

@@ -5,6 +5,7 @@ use crate::{consts, BusOperation, Vl53l8cx, Error};
 
 
 #[repr(C)]
+#[allow(dead_code)]
 pub struct MotionConfiguration {
     ref_bin_offset: i32,
     detection_threshold: u32,
@@ -28,6 +29,7 @@ pub struct MotionConfiguration {
 } 
 
 impl MotionConfiguration {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         let ref_bin_offset = 13633;
         let detection_threshold = 2883584;
@@ -98,12 +100,14 @@ impl MotionIndicator {
 
 impl<B: BusOperation> Vl53l8cx<B> {
 
+    #[allow(dead_code)]
     fn motion_indicator_init(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut motion_config = MotionConfiguration::new();
         self.motion_indicator_set_resolution(&mut motion_config, resolution)?;
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn dci_write_data_motion_config(&mut self, motion_config: &mut MotionConfiguration) -> Result<(), Error<B::Error>> {
         let mut arr: [u8; 156] = [0; 156];
         
@@ -160,6 +164,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn motion_indicator_set_distance_motion(&mut self, motion_config: &mut MotionConfiguration, distance_min_mm: u16, distance_max_mm: u16) -> Result<(), Error<B::Error>> {
         let mut tmp: f64;
         if distance_max_mm - distance_min_mm > 1500 || distance_max_mm > 4000 || distance_min_mm < 400 {
@@ -176,6 +181,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn motion_indicator_set_resolution(&mut self, motion_config: &mut MotionConfiguration, resolution: u8) -> Result<(), Error<B::Error>> {
         if resolution == VL53L8CX_RESOLUTION_4X4 {
             for i in 0..VL53L8CX_RESOLUTION_4X4 as usize {
@@ -192,7 +198,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             return Err(Error::Other);
         }
 
-        self.dci_write_data_motion_config(motion_config);
+        self.dci_write_data_motion_config(motion_config)?;
         Ok(())
     }
 }

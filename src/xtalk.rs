@@ -12,6 +12,7 @@ bitfield! {
 }
 
 impl<B: BusOperation> Vl53l8cx<B> {
+    #[allow(dead_code)]
     fn poll_for_answer_xtalk(&mut self, address: u16, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u32 = 0;
         loop {
@@ -28,6 +29,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn program_output_config(&mut self) -> Result<(), Error<B::Error>> {
         let mut header_config: [u32; 2] = [0, 0];
         let resolution = self.get_resolution()?;
@@ -114,6 +116,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn get_xtalk_margin(&mut self) -> Result<u32, Error<B::Error>> {
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_XTALK_CFG, 16)?;
         let mut xtalk_margin: u32 = (self.temp_buffer[0] as u32) << 24 | (self.temp_buffer[1] as u32) << 16 | (self.temp_buffer[2] as u32) << 8 | self.temp_buffer[3] as u32;
@@ -121,6 +124,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(xtalk_margin)
     }
     
+    #[allow(dead_code)]
     fn set_xtalk_margin(&mut self, xtalk_margin: u32) -> Result<(), Error<B::Error>> {
         let mut margin_kcps: [u8; 4] = [0; 4];
         margin_kcps.copy_from_slice(&(xtalk_margin<<11).to_ne_bytes());
@@ -132,6 +136,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn calibrate_xtalk(&mut self, reflectance_percent: u16, nb_samples: u8, distance_mm: u16) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
         let mut continue_loop: u8 = 1;
@@ -224,6 +229,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn get_caldata_xtalk(&mut self) -> Result<[u8; VL53L8CX_XTALK_BUFFER_SIZE], Error<B::Error>> {
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
         let mut xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
@@ -242,6 +248,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(xtalk_data)
     }
 
+    #[allow(dead_code)]
     fn set_caldata_xtalk(&mut self, xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE]) -> Result<(), Error<B::Error>> {
         let resolution = self.get_resolution()?;
         self.xtalk_data.copy_from_slice(&xtalk_data);

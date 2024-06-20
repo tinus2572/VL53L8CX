@@ -4,7 +4,6 @@ use crate::VL53L8CX_NB_TARGET_PER_ZONE;
 
 pub const VL53L8CX_FW_NBTAR_RANGING: u8 = 2;
 
-
 pub const  VL53L8CX_FIRMWARE: [u8; 86016] = [
  
    0xe0, 0x00, 0x03, 0x08,
@@ -21514,7 +21513,6 @@ pub const  VL53L8CX_FIRMWARE: [u8; 86016] = [
  
 ];
  
- 
 pub const VL53L8CX_DEFAULT_CONFIGURATION: [u8; VL53L8CX_CONFIGURATION_SIZE as usize] = [
    0x54, 0x50, 0x00, 0x80,
    0x00, 0x04, 0x04, 0x04,
@@ -21971,7 +21969,7 @@ pub const VL53L8CX_GET_NVM_CMD: [u8; 40] = [
    0x02, 0x02, 0x00, 0x24
 ];
  
-
+#[allow(dead_code)]
 pub const VL53L8CX_GET_XTALK_CMD: [u8; 72] = [
    0x54, 0x00, 0x00, 0x40,
    0x9F, 0xD8, 0x00, 0xC0,
@@ -21993,8 +21991,10 @@ pub const VL53L8CX_GET_XTALK_CMD: [u8; 72] = [
    0x07, 0x02, 0x00, 0x44
 ];
 
+#[allow(dead_code)]
 pub const VL53L8CX_FW_NBTAR_XTALK: u8 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 2 } else { VL53L8CX_NB_TARGET_PER_ZONE as u8 };
- 
+
+#[allow(dead_code)]
 pub const VL53L8CX_CALIBRATE_XTALK: [u8; 984] = [
    0x54, 0x50, 0x00, 0x80,
    0x00, 0x04, 0x08, 0x08,

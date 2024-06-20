@@ -4,6 +4,7 @@ use consts::*;
 use crate::{consts, BusOperation, Vl53l8cx, Error};
 
 #[repr(C)]
+#[allow(dead_code)]
 pub struct DetectionThresholds {
     param_low_thresh: i32,
     param_high_thresh: i32,
@@ -14,6 +15,7 @@ pub struct DetectionThresholds {
 }
 
 impl<B: BusOperation> Vl53l8cx<B> {
+#[allow(dead_code)]
      fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
         let enabled: u8;
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
@@ -21,6 +23,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(enabled)
     }
 
+#[allow(dead_code)]
     fn set_detection_threshholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
         let mut grp_global_config: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
         let mut tmp: [u8; 1] = [0];
@@ -38,6 +41,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+#[allow(dead_code)]
     fn get_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
         let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
         for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
@@ -84,6 +88,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+#[allow(dead_code)]
     fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
         let mut grp_valid_target_cfg: [u8; 8] = [0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05];
         for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
@@ -134,12 +139,14 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+#[allow(dead_code)]
     fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
         let auto_stop: u8 = self.temp_buffer[0x03];
         Ok(auto_stop)
     }
 
+#[allow(dead_code)]
     fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
         let tmp: [u8; 1] = [auto_stop];
         self.dci_replace_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;

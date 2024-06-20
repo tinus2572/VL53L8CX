@@ -19,19 +19,21 @@ use stm32f4xx_hal::{
 };
 
 
+#[allow(unused_imports)]
 use buffers::*;
 use consts::*;
 use bus_operation::*;
-use structs::*;
-use detection_thresholds::*;
 use motion_indicator::*;
+#[allow(unused_imports)]
+use detection_thresholds::*;
+#[allow(unused_imports)]
 use xtalk::*;
+#[allow(unused_imports)]
 use driver::*;
 
 mod buffers;
 mod consts;
 mod bus_operation;
-mod structs;
 mod detection_thresholds;
 mod motion_indicator;
 mod xtalk;

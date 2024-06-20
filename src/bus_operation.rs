@@ -3,6 +3,7 @@ use crate::{consts, Vl53l8cx, Error, SevenBitAddress, I2c, Pin, Output, PushPull
 
 pub trait BusOperation {
     type Error;
+    #[allow(dead_code)]
     fn read(&mut self, rbuf: &mut [u8]) -> Result<(), Self::Error>; 
     fn write(&mut self, wbuf: &[u8]) -> Result<(), Self::Error>;
     fn write_read(&mut self, wbuf: &[u8], rbuf: &mut [u8]) -> Result<(), Self::Error>;
@@ -46,11 +47,13 @@ impl<P: I2c> BusOperation for Vl53l8cxI2C<P> {
 
 pub struct Vl53l8cxSPI<P> {
     spi: P,
+    #[allow(dead_code)]
     cs_pin: Pin<'B', 6, Output<PushPull>>
 }
 
 // new for spi
 impl<P: SpiDevice> Vl53l8cxSPI<P> {
+    #[allow(dead_code)]
     pub fn new(spi: P, cs_pin: Pin<'B', 6, Output<PushPull>>) -> Self {
         Self { spi, cs_pin }
     }
@@ -133,6 +136,7 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
 impl<P> Vl53l8cx<Vl53l8cxSPI<P>> 
     where P: SpiDevice,
 {
+    #[allow(dead_code)]
     pub fn new_spi(spi: P, cs_pin: Pin<'B', 6, Output<PushPull>>, lpn_pin: Pin<'B', 0, Output<PushPull>>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
@@ -155,6 +159,7 @@ impl<P> Vl53l8cx<Vl53l8cxSPI<P>>
         Ok(instance)
     }
 
+    #[allow(dead_code)]
     pub fn init_sensor(&mut self) -> Result<(), Error<P::Error>>{
         self.off()?;
         self.on()?;

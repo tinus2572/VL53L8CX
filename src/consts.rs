@@ -7,12 +7,19 @@ pub const VL53L8CX_RESOLUTION_4X4: u8 = 16;
 pub const VL53L8CX_RESOLUTION_8X8: u8 = 64;
 
 
+#[allow(dead_code)]
 pub const VL53L8CX_STATUS_OK: u8 = 0;
+#[allow(dead_code)]
 pub const VL53L8CX_STATUS_TIMEOUT_ERROR: u8 = 1;
+#[allow(dead_code)]
 pub const VL53L8CX_STATUS_CORRUPTED_FRAME: u8 = 2;
+#[allow(dead_code)]
 pub const VL53L8CX_STATUS_LASER_SAFETY: u8 = 3;
+#[allow(dead_code)]
 pub const VL53L8CX_MCU_ERROR: u8 = 66;
+#[allow(dead_code)]
 pub const VL53L8CX_STATUS_INVALID_PARAM: u8 = 127;
+#[allow(dead_code)]
 pub const VL53L8CX_STATUS_ERROR: u8 = 255;
 
 
@@ -60,8 +67,10 @@ pub const VL53L8CX_DCI_RANGING_MODE: u16 = 0xAD30;
 pub const VL53L8CX_DCI_DSS_CONFIG: u16 = 0xAD38;
 pub const VL53L8CX_DCI_TARGET_ORDER: u16 = 0xAE64;
 pub const VL53L8CX_DCI_SHARPENER: u16 = 0xAED8;
-pub const VL53L8CX_DCI_INTERNAL_CP: u16 = 0xB39C;
 pub const VL53L8CX_DCI_SYNC_PIN: u16 = 0xB5F0;
+#[allow(dead_code)]
+pub const VL53L8CX_DCI_INTERNAL_CP: u16 = 0xB39C;
+#[allow(dead_code)]
 pub const VL53L8CX_DCI_MOTION_DETECTOR_CFG: u16 = 0xBFAC;
 pub const VL53L8CX_DCI_ZONE_CONFIG: u16 = 0x5450;
 pub const VL53L8CX_DCI_FW_NB_TARGET: u16 = 0x5478;
@@ -124,20 +133,33 @@ pub const VL53L8CX_DISABLE_MOTION_INDICATOR: u32 = 0;
 
 
 
+#[allow(dead_code)]
 pub const VL53L8CX_NB_THRESHOLDS: u8 = 64;
 
+#[allow(dead_code)]
 pub const VL53L8CX_DCI_DET_THRESH_CONFIG: u16 = 0x5488;
+#[allow(dead_code)]
 pub const VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG: u16 = 0xB6E0;
+#[allow(dead_code)]
 pub const VL53L8CX_DCI_DET_THRESH_START: u16 = 0xB6E8;
+#[allow(dead_code)]
 pub const VL53L8CX_DCI_DET_THRESH_VALID_STATUS: u16 = 0xB9F0;
 
+#[allow(dead_code)]
 pub const VL53L8CX_DISTANCE_MM: u8 = 1;
+#[allow(dead_code)]
 pub const VL53L8CX_SIGNAL_PER_SPAD_KCPS: u8 = 2;
+#[allow(dead_code)]
 pub const VL53L8CX_RANGE_SIGMA_MM: u8 = 4;
+#[allow(dead_code)]
 pub const VL53L8CX_AMBIENT_PER_SPAD_KCPS: u8 = 8;
+#[allow(dead_code)]
 pub const VL53L8CX_NB_TARGET_DETECTED: u8 = 9;
+#[allow(dead_code)]
 pub const VL53L8CX_TARGET_STATUS: u8 = 12;
+#[allow(dead_code)]
 pub const VL53L8CX_NB_SPADS_ENABLED: u8 = 13;
+#[allow(dead_code)]
 pub const VL53L8CX_MOTION_INDICATOR: u8 = 19;
 
 pub const VL53L8CX_DCI_CAL_CFG: u16 = 0x5470;
