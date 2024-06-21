@@ -93,20 +93,22 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
     pub fn new_i2c(i2c: P, address: SevenBitAddress, lpn_pin: Pin<'B', 0, Output<PushPull>>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
+        let is_auto_stop_enabled: u8 = 0;
         let bus: Vl53l8cxI2C<P> = Vl53l8cxI2C::new(i2c, address);
         let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
         let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
         let instance: Vl53l8cx<Vl53l8cxI2C<P>> = Self { 
-            bus, 
-            temp_buffer, 
-            offset_data, 
-            xtalk_data, 
-            streamcount, 
-            data_read_size, 
-            lpn_pin, 
+            temp_buffer,
+            offset_data,
+            xtalk_data,
+            streamcount,
+            data_read_size,
+            is_auto_stop_enabled,
+            lpn_pin,
             i2c_rst_pin,
-            delay 
+            bus,
+            delay
         };
         Ok(instance)
     }
@@ -140,19 +142,21 @@ impl<P> Vl53l8cx<Vl53l8cxSPI<P>>
     pub fn new_spi(spi: P, cs_pin: Pin<'B', 6, Output<PushPull>>, lpn_pin: Pin<'B', 0, Output<PushPull>>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
+        let is_auto_stop_enabled: u8 = 0;
         let bus: Vl53l8cxSPI<P> = Vl53l8cxSPI::new(spi, cs_pin);
         let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
         let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
         let instance: Vl53l8cx<Vl53l8cxSPI<P>> = Self { 
-            bus, 
-            temp_buffer, 
-            offset_data, 
-            xtalk_data, 
-            streamcount, 
+            temp_buffer,
+            offset_data,
+            xtalk_data,
+            streamcount,
             data_read_size,
+            is_auto_stop_enabled,
             lpn_pin,
             i2c_rst_pin,
+            bus,
             delay
         };
         

@@ -18,7 +18,6 @@ use stm32f4xx_hal::{
     gpio::{Output, Pin, PushPull, PinState::High}, i2c::{I2c1, Mode}, pac::{self, USART2}, prelude::*, serial::{Config, Tx}, timer::SysDelay
 };
 
-
 #[allow(unused_imports)]
 use buffers::*;
 use consts::*;
@@ -134,7 +133,6 @@ fn main() -> ! {
     ).unwrap();
 
     sensor.init_sensor(VL53L8CX_DEFAULT_I2C_ADDRESS).unwrap();
-    
     sensor.start_ranging().unwrap();
     
     let mut ready: u8 = 0;

@@ -23,6 +23,7 @@ pub struct Vl53l8cx<B: BusOperation> {
     pub xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE],
     pub streamcount: u8,
     pub data_read_size: u32,
+    pub is_auto_stop_enabled: u8,
 
     pub lpn_pin: Pin<'B', 0, Output<PushPull>>,
     pub i2c_rst_pin: i8,
@@ -132,26 +133,16 @@ impl<B: BusOperation> Vl53l8cx<B> {
             }
             for j in 0..4 {
                 for i in 0..4 {
-                    signal_grid[i + (4 * j)] = (
-                          signal_grid[(2 * i) + (16 * j) + 0]
-                        + signal_grid[(2 * i) + (16 * j) + 1]
-                        + signal_grid[(2 * i) + (16 * j) + 8]
-                        + signal_grid[(2 * i) + (16 * j) + 9]
-                    ) / 4;
-                    range_grid[i + (4 * j)] = (
-                          range_grid[(2 * i) + (16 * j) + 0]
-                        + range_grid[(2 * i) + (16 * j) + 1]
-                        + range_grid[(2 * i) + (16 * j) + 8]
-                        + range_grid[(2 * i) + (16 * j) + 9]
-                    ) / 4;
+                    signal_grid[i + (4 * j)] = signal_grid[(2 * i) + (16 * j) + 0]/4 + signal_grid[(2 * i) + (16 * j) + 1]/4 + signal_grid[(2 * i) + (16 * j) + 8]/4 + signal_grid[(2 * i) + (16 * j) + 9]/4;
+                    range_grid[i + (4 * j)] = range_grid[(2 * i) + (16 * j) + 0]/4 + range_grid[(2 * i) + (16 * j) + 1]/4 + range_grid[(2 * i) + (16 * j) + 8]/4 + range_grid[(2 * i) + (16 * j) + 9]/4;
                 }
             }
             for (i, &num) in signal_grid.iter().enumerate() {
-                self.temp_buffer[0x3c+ i*4..0x3c+ i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+                self.temp_buffer[0x3c+i*4..0x3c+(i+1)*4].copy_from_slice(&num.to_ne_bytes()); 
             }
 
             for (i, &num) in range_grid.iter().enumerate() {
-                self.temp_buffer[0x140+ i*4..0x140+ i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+                self.temp_buffer[0x140+i*2..0x140+(i+1)*2].copy_from_slice(&num.to_ne_bytes()); 
             }
 
             self.swap_temp_buffer(VL53L8CX_OFFSET_BUFFER_SIZE)?;
@@ -186,18 +177,14 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 signal_grid[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
             }
 
-            for j in 0..3 {
-                for i in 0..3 {
-                    signal_grid[i + (4 * j)] = (
-                        signal_grid[(2 * i) + (16 * j) + 0]
-                      + signal_grid[(2 * i) + (16 * j) + 1]
-                      + signal_grid[(2 * i) + (16 * j) + 8]
-                      + signal_grid[(2 * i) + (16 * j) + 9]
-                  ) / 4;
+            for j in 0..4 {
+                for i in 0..4 {
+                    signal_grid[i + (4 * j)] = signal_grid[(2 * i) + (16 * j) + 0]/4 + signal_grid[(2 * i) + (16 * j) + 1]/4 + signal_grid[(2 * i) + (16 * j) + 8]/4 + signal_grid[(2 * i) + (16 * j) + 9]/4;
                 }
             }
+
             for (i, &num) in signal_grid.iter().enumerate() {
-                self.temp_buffer[0x34+ i*4..0x34+ i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
+                self.temp_buffer[0x34+i*4..0x34+(i+1)*4].copy_from_slice(&num.to_ne_bytes()); 
             }
             self.swap_temp_buffer(VL53L8CX_XTALK_BUFFER_SIZE)?;
             self.temp_buffer[0x134..0x134+profile_4x4.len()].copy_from_slice(&profile_4x4);
@@ -231,24 +218,30 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
     #[inline]
     pub fn read_from_register(&mut self, reg: u16, rbuf: &mut [u8]) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8).try_into().unwrap();
-        let b: u8 = (reg & 0xFF).try_into().unwrap(); 
-        self.bus.write_read(&[a, b], rbuf).map_err(Error::Bus)?;
+        let size = rbuf.len();
+        let mut read_size: usize;
 
+        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
+            read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
+            let a: u8 = (reg + i as u16 >> 8).try_into().unwrap();
+            let b: u8 = (reg + i as u16 & 0xFF).try_into().unwrap(); 
+            self.bus.write_read(&[a, b], &mut rbuf[i..i+read_size]).map_err(Error::Bus)?;
+        }
         Ok(())
     }
     
     #[inline]
     pub fn read_from_register_to_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8).try_into().unwrap();
-        let b: u8 = (reg & 0xFF).try_into().unwrap(); 
-        self.bus
-            .write_read(&[a, b], &mut self.temp_buffer[..size])
-            .map_err(Error::Bus)?;
-
+        let mut read_size: usize;
+        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
+            read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
+            let a: u8 = (reg + i as u16 >> 8).try_into().unwrap();
+            let b: u8 = (reg + i as u16 & 0xFF).try_into().unwrap(); 
+            self.bus.write_read(&[a, b], &mut self.temp_buffer[i..i+read_size]).map_err(Error::Bus)?;
+        }
         Ok(())
     }
-    
+
     #[inline]
     pub fn write_to_register(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
         let a: u8 = (reg >> 8).try_into().unwrap();
@@ -257,32 +250,98 @@ impl<B: BusOperation> Vl53l8cx<B> {
        
         Ok(())
     }
+    
+    #[inline]
+    #[allow(dead_code)]
+    pub fn write_to_register_check(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
+        let a: u8 = (reg >> 8).try_into().unwrap();
+        let b: u8 = (reg & 0xFF).try_into().unwrap(); 
+        self.bus.write(&[a, b, val]).map_err(Error::Bus)?;
+        
+        // Check
+        let mut arr: [u8; 1] = [0];
+        self.read_from_register(reg, &mut arr)?;
+        if arr[0] != val {
+            return Err(Error::Other);
+        }
+        Ok(())
+    }
 
     #[inline]
     pub fn write_multi_to_register(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8).try_into().unwrap();
-        let b: u8 = (reg & 0xFF).try_into().unwrap(); 
-        self.bus
-            .write(&[a, b])
-            .map_err(Error::Bus)?;
-        self.bus
-            .write(wbuf)
-            .map_err(Error::Bus)?;
+        let size = wbuf.len();
+        let mut write_size: usize;
+        let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
 
+        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
+            write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
+            tmp[0] = (reg + i as u16 >> 8) as u8;
+            tmp[1] = (reg + i as u16 & 0xFF) as u8;
+            tmp[2..2+write_size].copy_from_slice(&wbuf[i..i+write_size]);
+            self.bus.write(&tmp[..2+write_size]).map_err(Error::Bus)?;    
+        }   
         Ok(())
     }
     
     #[inline]
-    pub fn write_multi_to_register_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8).try_into().unwrap();
-        let b: u8 = (reg & 0xFF).try_into().unwrap(); 
-        self.bus
-            .write(&[a, b])
-            .map_err(Error::Bus)?;
-        self.bus
-            .write(&self.temp_buffer[..size])
-            .map_err(Error::Bus)?;
+    #[allow(dead_code)]
+    pub fn write_multi_to_register_check(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
+        let size = wbuf.len();
+        let mut write_size: usize;
+        let mut arr: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
+        let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
+        
+        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
+            write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
+            tmp[0] = (reg + i as u16 >> 8) as u8;
+            tmp[1] = (reg + i as u16 & 0xFF) as u8;
+            tmp[2..2+write_size].copy_from_slice(&wbuf[i..i+write_size]);
+            self.bus.write(&tmp[..2+write_size]).map_err(Error::Bus)?;   
+            
+            // Check
+            self.read_from_register(reg + i as u16, &mut arr[..write_size])?;
+            if arr[..write_size] != wbuf[i..i+write_size] {
+                return Err(Error::Other);
+            }    
+        }   
+        Ok(())
+    }
+    
+    #[inline]
+    pub fn write_multi_to_register_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
+        let mut write_size: usize;
+        let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
 
+        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
+            write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
+            tmp[0] = (reg + i as u16 >> 8) as u8;
+            tmp[1] = (reg + i as u16 & 0xFF) as u8;
+            tmp[2..2+write_size].copy_from_slice(&self.temp_buffer[i..i+write_size]);
+            self.bus.write(&tmp[..2+write_size]).map_err(Error::Bus)?;   
+        }
+        Ok(())
+    } 
+    
+    #[inline]
+    #[allow(dead_code)]
+    pub fn write_multi_to_register_temp_buffer_check(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
+        let mut write_size: usize;
+        let mut arr: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
+        let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
+        
+        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
+            write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
+            tmp[0] = (reg + i as u16 >> 8) as u8;
+            tmp[1] = (reg + i as u16 & 0xFF) as u8;
+            tmp[2..2+write_size].copy_from_slice(&self.temp_buffer[i..i+write_size]);
+            self.bus.write(&tmp[..2+write_size]).map_err(Error::Bus)?;   
+            
+            // Check
+            self.read_from_register(reg + i as u16, &mut arr[..write_size])?;
+            if arr[..write_size] != self.temp_buffer[i..i+write_size] {
+                return Err(Error::Other);
+            }    
+        }  
         Ok(())
     }
 
@@ -419,7 +478,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
             /* Add headers and footer */
             self.temp_buffer[..headers.len()].copy_from_slice(&headers);
-            self.temp_buffer[(data_size + footer.len())..].copy_from_slice(&footer);
+            self.temp_buffer[data_size+4..data_size+4+footer.len()].copy_from_slice(&footer);
 
             /* Send data to FW */
             self.write_multi_to_register_temp_buffer(address, data_size + 12)?;
@@ -457,7 +516,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
             /* Add headers and footer */
             self.temp_buffer[..headers.len()].copy_from_slice(&headers);
-            self.temp_buffer[(data_size + footer.len())..].copy_from_slice(&footer);
+            self.temp_buffer[data_size+4..data_size+4+footer.len()].copy_from_slice(&footer);
 
             /* Send data to FW */
             self.write_multi_to_register_temp_buffer(address, data_size + 12)?;

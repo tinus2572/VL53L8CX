@@ -191,14 +191,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
             if self.temp_buffer[0] != VL53L8CX_STATUS_ERROR {
                 /* Coverglass too good for Xtalk calibration */
                 if self.temp_buffer[2] >= 0x7f && self.temp_buffer[3] & 0x80 >> 7 == 1 {
-    // TODO
-                    // self.default_xtalk = 
+                    self.xtalk_data.copy_from_slice(&VL53L8CX_DEFAULT_XTALK);
                 }
                 continue_loop = 0;
             } else if timeout >= 400 {
-    // TODO         
-                continue_loop = 0;
-                // return Err(Error::Other);
+                return Err(Error::Other);
             } else {
                 timeout += 1;
                 self.delay(50);
