@@ -8,14 +8,27 @@ use bitfield::bitfield;
 use core::{fmt::Write, cell::RefCell};
 
 use embedded_hal::{
-    i2c::{I2c, SevenBitAddress},
+    i2c::SevenBitAddress,
     spi::{SpiDevice, Operation}
 };
 
 use embedded_hal_bus::i2c::RefCellDevice;
 
 use stm32f4xx_hal::{
-    gpio::{Output, Pin, PushPull, PinState::High}, i2c::{I2c1, Mode}, pac::{self, USART2}, prelude::*, serial::{Config, Tx}, timer::SysDelay
+    gpio::{
+        Output, 
+        Pin, 
+        PushPull, 
+        PinState::High,
+        gpioa, 
+        gpiob,
+        Alternate}, 
+    i2c::{I2c, I2c1, Mode}, 
+    pac::{I2C1, USART2, Peripherals, CorePeripherals}, 
+    prelude::*, 
+    serial::{Config, Tx}, 
+    timer::SysDelay,
+    rcc::{Rcc, Clocks}
 };
 
 #[allow(unused_imports)]
@@ -86,45 +99,44 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
 #[entry]
 fn main() -> ! {
-    let mut results = ResultsData::new();
+    let mut results: ResultsData = ResultsData::new();
     
-    let width = 4;
     
-    let dp = pac::Peripherals::take().unwrap();
-    let cp = cortex_m::Peripherals::take().unwrap();
-    let rcc = dp.RCC.constrain();
-    let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
-    let gpioa = dp.GPIOA.split();
-    let gpiob = dp.GPIOB.split();
-    let _pwr_pin = gpioa.pa7.into_push_pull_output_in_state(High);
-    let lpn_pin = gpiob.pb0.into_push_pull_output_in_state(High);
-    let tx_pin = gpioa.pa2.into_alternate();
+    let dp: Peripherals = Peripherals::take().unwrap();
+    let cp: CorePeripherals = CorePeripherals::take().unwrap();
+    let rcc: Rcc = dp.RCC.constrain();
+    let clocks: Clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+    let gpioa: gpioa::Parts = dp.GPIOA.split();
+    let gpiob: gpiob::Parts = dp.GPIOB.split();
+    let _pwr_pin: Pin<'A', 7, Output> = gpioa.pa7.into_push_pull_output_in_state(High);
+    let lpn_pin: Pin<'B', 0, Output> = gpiob.pb0.into_push_pull_output_in_state(High);
+    let tx_pin: Pin<'A', 2, Alternate<7>> = gpioa.pa2.into_alternate();
     let scl: Pin<'B', 8> = gpiob.pb8;
     let sda: Pin<'B', 9> = gpiob.pb9;
-    let delay = cp.SYST.delay(&clocks);
+    let delay: SysDelay = cp.SYST.delay(&clocks);
     
-    let mut tx: Tx<pac::USART2> = dp.USART2.tx(
+    let mut tx: Tx<USART2> = dp.USART2.tx(
         tx_pin,
         Config::default()
         .baudrate(115200.bps())
         .wordlength_8()
         .parity_none(),
-        &clocks
-    ).unwrap(); 
+        &clocks).unwrap(); 
     
-    let i2c = I2c1::new(
+    let i2c: I2c<I2C1> = I2c1::new(
         dp.I2C1,
         (scl, sda),
-        Mode::Standard { frequency:  100.kHz() },
+        Mode::Standard{frequency:100.kHz()},
         &clocks);
-
+    
+    let width: usize = 4;
     write_results(&mut tx, &results, width);
 
-    let i2c_bus = RefCell::new(i2c);
+    let i2c_bus: RefCell<I2c<I2C1>> = RefCell::new(i2c);
     let address: SevenBitAddress = VL53L8CX_DEFAULT_I2C_ADDRESS;
-    let i2c_rst_pin = -1;
+    let i2c_rst_pin: i8 = -1;
 
-    let mut sensor = Vl53l8cx::new_i2c(
+    let mut sensor: Vl53l8cx<Vl53l8cxI2C<RefCellDevice<I2c<I2C1>>>> = Vl53l8cx::new_i2c(
         RefCellDevice::new(&i2c_bus), 
         address, 
         lpn_pin, 
@@ -138,8 +150,7 @@ fn main() -> ! {
     let mut ready: u8 = 0;
     
     loop {
-        loop {  
-            if ready != 0 { break; }
+        while ready == 0 {
             ready = sensor.check_data_ready().unwrap();
         }
         results = sensor.get_ranging_data().unwrap();

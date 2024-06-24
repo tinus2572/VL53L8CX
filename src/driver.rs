@@ -2,10 +2,6 @@
 use consts::*;
 use buffers::*;
 
-use core::{
-    convert::TryInto, mem::{size_of, size_of_val}
-};
-
 use stm32f4xx_hal::prelude::*;
 
 use crate::{consts, buffers, BusOperation, bitfield, MotionIndicator, SysDelay, Output, PushPull, Pin};
@@ -36,6 +32,7 @@ pub struct Vl53l8cx<B: BusOperation> {
 pub enum Error<B> {
     Bus(B),
     Other,
+    TimeoutPollForAnswer
 }
 
 #[repr(C)]
@@ -68,25 +65,45 @@ impl ResultsData {
     }
 }
 
+fn from_u8_to_u16(src: &[u8], dst: &mut[u16]) {
+    for (i, chunk) in src.chunks(2).enumerate() {
+        dst[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
+    }
+}
+fn from_u8_to_u32(src: &[u8], dst: &mut[u32]) {
+    for (i, chunk) in src.chunks(4).enumerate() {
+        dst[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+    }
+}
+fn from_u16_to_u8(src: &[u16], dst: &mut[u8]) {
+    for (i, &num) in src.iter().enumerate() {
+        dst[i*2..(i+1)*2].copy_from_slice(&num.to_ne_bytes()); 
+    }
+}
+fn from_u32_to_u8(src: &[u32], dst: &mut[u8]) {
+    for (i, &num) in src.iter().enumerate() {
+        dst[i*4..(i+1)*4].copy_from_slice(&num.to_ne_bytes()); 
+    }
+}
+
 impl<B: BusOperation> Vl53l8cx<B> {
+
     fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
 
-        loop {
+        while timeout <= 200 {
             if self.temp_buffer[pos as usize] & mask == expected_val {
                 return Ok(());
             }
             self.read_from_register_to_temp_buffer(reg, size)?;
             self.delay(10);
-            if timeout >= 200 { /* 2s timeout */
+            
+            if size >= 4 && self.temp_buffer[2] >= 0x7F {
                 return Err(Error::Other);
-            } else if size >= 4 && self.temp_buffer[2] >= 0x7F {
-                return Err(Error::Other);
-            } else {
-                timeout+=1;
             }
-
+            timeout+=1;
         }
+        Err(Error::TimeoutPollForAnswer)
     }
 
     fn poll_for_mcu_boot(&mut self) -> Result<(), Error<B::Error>> {
@@ -94,10 +111,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut go2_status1: [u8; 1] = [0];
         let mut timeout: u16 = 0;
 
-        loop {
-            if timeout >= 500 {
-                return Ok(());
-            }
+        while timeout <= 500 {
             self.read_from_register(0x06, &mut go2_status0)?;
             if go2_status0[0] & 0x80 != 0 {
                 self.read_from_register(0x07, &mut go2_status1)?;
@@ -106,11 +120,12 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 }
             }
             self.delay(1);
-            timeout += 1;
             if go2_status0[0] & 0x01 != 0 {
                 return Ok(());
             }
+            timeout += 1;
         }
+        Err(Error::TimeoutPollForAnswer)
     }
 
     fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
@@ -125,25 +140,17 @@ impl<B: BusOperation> Vl53l8cx<B> {
         if resolution == VL53L8CX_RESOLUTION_4X4 {
             self.temp_buffer[0x10..0x10+dss_4x4.len()].copy_from_slice(&dss_4x4);
             self.swap_temp_buffer(VL53L8CX_OFFSET_BUFFER_SIZE)?;
-            for (i, chunk) in self.temp_buffer[0x3c..0x3c+256].chunks(4).enumerate() {
-                signal_grid[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-            }
-            for (i, chunk) in self.temp_buffer[0x140..0x140+128].chunks(2).enumerate() {
-                range_grid[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
-            }
+            from_u8_to_u32(&mut self.temp_buffer[0x3c..0x3c+256], &mut signal_grid);
+            from_u8_to_u16(&mut self.temp_buffer[0x140..0x140+128], &mut range_grid);
+            
             for j in 0..4 {
                 for i in 0..4 {
                     signal_grid[i + (4 * j)] = signal_grid[(2 * i) + (16 * j) + 0]/4 + signal_grid[(2 * i) + (16 * j) + 1]/4 + signal_grid[(2 * i) + (16 * j) + 8]/4 + signal_grid[(2 * i) + (16 * j) + 9]/4;
                     range_grid[i + (4 * j)] = range_grid[(2 * i) + (16 * j) + 0]/4 + range_grid[(2 * i) + (16 * j) + 1]/4 + range_grid[(2 * i) + (16 * j) + 8]/4 + range_grid[(2 * i) + (16 * j) + 9]/4;
                 }
             }
-            for (i, &num) in signal_grid.iter().enumerate() {
-                self.temp_buffer[0x3c+i*4..0x3c+(i+1)*4].copy_from_slice(&num.to_ne_bytes()); 
-            }
-
-            for (i, &num) in range_grid.iter().enumerate() {
-                self.temp_buffer[0x140+i*2..0x140+(i+1)*2].copy_from_slice(&num.to_ne_bytes()); 
-            }
+            from_u32_to_u8(&mut signal_grid, &mut self.temp_buffer[0x3c..0x3c+256]);
+            from_u16_to_u8(&mut range_grid, &mut self.temp_buffer[0x140..0x140+128]);
 
             self.swap_temp_buffer(VL53L8CX_OFFSET_BUFFER_SIZE)?;
         }
@@ -173,9 +180,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.temp_buffer[0x020..0x020 + dss_4x4.len()].copy_from_slice(&dss_4x4);
 
             self.swap_temp_buffer(VL53L8CX_XTALK_BUFFER_SIZE)?;
-            for (i, chunk) in self.temp_buffer[0x34..0x34+256].chunks(4).enumerate() {
-                signal_grid[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-            }
+            from_u8_to_u32(&mut self.temp_buffer[0x34..0x34+256], &mut signal_grid);
 
             for j in 0..4 {
                 for i in 0..4 {
@@ -183,9 +188,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 }
             }
 
-            for (i, &num) in signal_grid.iter().enumerate() {
-                self.temp_buffer[0x34+i*4..0x34+(i+1)*4].copy_from_slice(&num.to_ne_bytes()); 
-            }
+            from_u32_to_u8(&mut signal_grid, &mut self.temp_buffer[0x34..0x34+256]);
+            
             self.swap_temp_buffer(VL53L8CX_XTALK_BUFFER_SIZE)?;
             self.temp_buffer[0x134..0x134+profile_4x4.len()].copy_from_slice(&profile_4x4);
             let tmp: [u8; 4] = [0; 4];
@@ -223,8 +227,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
             read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
-            let a: u8 = (reg + i as u16 >> 8).try_into().unwrap();
-            let b: u8 = (reg + i as u16 & 0xFF).try_into().unwrap(); 
+            let a: u8 = (reg + i as u16 >> 8) as u8;
+            let b: u8 = (reg + i as u16 & 0xFF) as u8; 
             self.bus.write_read(&[a, b], &mut rbuf[i..i+read_size]).map_err(Error::Bus)?;
         }
         Ok(())
@@ -235,8 +239,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut read_size: usize;
         for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
             read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
-            let a: u8 = (reg + i as u16 >> 8).try_into().unwrap();
-            let b: u8 = (reg + i as u16 & 0xFF).try_into().unwrap(); 
+            let a: u8 = (reg + i as u16 >> 8) as u8;
+            let b: u8 = (reg + i as u16 & 0xFF) as u8; 
             self.bus.write_read(&[a, b], &mut self.temp_buffer[i..i+read_size]).map_err(Error::Bus)?;
         }
         Ok(())
@@ -244,8 +248,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
     #[inline]
     pub fn write_to_register(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8).try_into().unwrap();
-        let b: u8 = (reg & 0xFF).try_into().unwrap(); 
+        let a: u8 = (reg >> 8) as u8;
+        let b: u8 = (reg & 0xFF) as u8; 
         self.bus.write(&[a, b, val]).map_err(Error::Bus)?;
        
         Ok(())
@@ -254,8 +258,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
     #[inline]
     #[allow(dead_code)]
     pub fn write_to_register_check(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8).try_into().unwrap();
-        let b: u8 = (reg & 0xFF).try_into().unwrap(); 
+        let a: u8 = (reg >> 8) as u8;
+        let b: u8 = (reg & 0xFF) as u8; 
         self.bus.write(&[a, b, val]).map_err(Error::Bus)?;
         
         // Check
@@ -420,6 +424,20 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
     
+    #[allow(dead_code)]
+    fn dci_write_data_u16(&mut self, data: &mut [u16], buf: &mut[u8], index: u16, data_size: usize)  -> Result<(), Error<B::Error>> {
+        from_u16_to_u8(data, buf);
+        self.dci_write_data(buf, index, data_size)?;
+        from_u8_to_u16(buf, data);
+        Ok(())
+    }
+    fn dci_write_data_u32(&mut self, data: &mut [u32], buf: &mut[u8], index: u16, data_size: usize)  -> Result<(), Error<B::Error>> {
+        from_u32_to_u8(data, buf);
+        self.dci_write_data(buf, index, data_size)?;
+        from_u8_to_u32(buf, data);
+        Ok(())
+    }
+
     pub fn dci_read_data_temp_buffer(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut cmd: [u8; 12] = [
             0x00, 0x00, 0x00, 0x00,
@@ -548,7 +566,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn init(&mut self) -> Result<(), Error<B::Error>> {
         let mut tmp: [u8; 1] = [0];    
         let mut pipe_ctrl: [u8; 4] = [VL53L8CX_NB_TARGET_PER_ZONE as u8, 0x00, 0x01, 0x00];
-        let mut single_range: [u8; 1] = [0x01];
+        let mut single_range: [u8; 4] = [0,0,0,0x01];
 
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x0009, 0x04)?;
@@ -662,14 +680,14 @@ impl<B: BusOperation> Vl53l8cx<B> {
         /* Send default configuration to VL53L8CX firmware */
         self.write_multi_to_register(0x2c34,&VL53L8CX_DEFAULT_CONFIGURATION)?;
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
-        self.dci_write_data(&mut pipe_ctrl, VL53L8CX_DCI_PIPE_CONTROL, size_of::<u8>())?;
+        self.dci_write_data(&mut pipe_ctrl, VL53L8CX_DCI_PIPE_CONTROL, 4)?;
       
         if VL53L8CX_NB_TARGET_PER_ZONE != 1 {
             tmp[0] = VL53L8CX_NB_TARGET_PER_ZONE as u8;
             self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FW_NB_TARGET, 16, &mut tmp, 1, 0x0C)?;
         }
       
-        self.dci_write_data(&mut single_range, VL53L8CX_DCI_SINGLE_RANGE, size_of::<u8>())?;
+        self.dci_write_data(&mut single_range, VL53L8CX_DCI_SINGLE_RANGE, 4)?;
       
 
         Ok(())
@@ -797,9 +815,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
             + (1-VL53L8CX_DISABLE_MOTION_INDICATOR) * 2048;
 
         /* Update data size */
-        let upper_bound = size_of_val(&output) / size_of::<u32>(); // 48 ?
-        for i in 0..upper_bound {
-            if output[i] == 0 || output_bh_enable[i/32] & (1 << (i%32)) == 0 {
+        for i in 0..12 {
+            // if output[i] == 0 || output_bh_enable[i/32] & (1 << (i%32)) == 0 { // ???
+            if output[i] == 0 || output_bh_enable[0] & 1<<i == 0 { // ???
                 continue;
             }
             bh = BlockHeader(output[i]);
@@ -817,34 +835,14 @@ impl<B: BusOperation> Vl53l8cx<B> {
         }
         self.data_read_size += 24;
 
-        let mut buf: [u8; 48] = [0; 48];
-        for (i, &num) in output.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_LIST, 48)?;
-        for (i, chunk) in buf.chunks(4).enumerate() {
-            output[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
+        self.dci_write_data_u32(&mut output, &mut [0; 48], VL53L8CX_DCI_OUTPUT_LIST, 48)?;
         
         header_config[0] = self.data_read_size;
-        header_config[1] = upper_bound as u32;
+        header_config[1] = 12 as u32;
+        self.dci_write_data_u32(&mut header_config, &mut [0; 8], VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
 
-        let mut buf: [u8; 8] = [0; 8];
-        for (i, &num) in header_config.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
-        for (i, chunk) in buf.chunks(4).enumerate() {
-            header_config[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
-        let mut buf: [u8; 16] = [0; 16];
-        for (i, &num) in output_bh_enable.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
-        for (i, chunk) in buf.chunks(4).enumerate() {
-            output_bh_enable[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
+        self.dci_write_data_u32(&mut output_bh_enable, &mut [0; 16], VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
+        
         /* Start xshut bypass (interrupt mode) */
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x09, 0x05)?;
@@ -852,20 +850,16 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         /* Start ranging session */
         self.write_multi_to_register(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
-
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
 
         /* Read ui range data content and compare if data size is the correct one */
         self.dci_read_data_temp_buffer(0x5440, 12)?;
-
-        for (i, chunk) in self.temp_buffer[..2].chunks(2).enumerate() {
-            tmp[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
-        }
-
-        if tmp[0] != self.data_read_size as u16 {
+        tmp[0] = (self.temp_buffer[0x8] as u16) << 8 | (self.temp_buffer[0x8+1] as u16);
+        if tmp[0] != self.data_read_size as u16 {       
             return Err(Error::Other);
         }
 
+        /* Ensure that there is no laser safety fault */
         self.dci_read_data_temp_buffer(0xe0c4, 8)?;
         if self.temp_buffer[0x6] != 0 {
             return Err(Error::Other);
@@ -882,9 +876,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut tmp: [u8; 1] = [0];
 
         self.read_from_register(0x2ffc, &mut buf)?;
-        for (i, chunk) in buf.chunks(4).enumerate() {
-            auto_flag_stop[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
+        from_u8_to_u32(&buf, &mut auto_flag_stop);
 
         if auto_flag_stop[0] != 0x4ff {
             self.write_to_register(0x7fff, 0x00)?;
@@ -894,18 +886,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.write_to_register(0x14, 0x01)?;
 
             /* Poll for G02 status 0 MCU stop */
-            loop {
-                if tmp[0] & (0x80 as u8) >> 7 == 0x00 {
-                    break;
-                }
-
+            while tmp[0] & (0x80 as u8) >> 7 == 0x00 && timeout <= 500{
                 self.read_from_register(0x6, &mut tmp)?;
                 self.delay(10);
-                timeout += 1;
 
-                if timeout > 500 {
-                    break;
-                }
+                timeout += 1;
             }
         }
 
@@ -949,9 +934,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn set_external_sync_pin_enable(&mut self, enable_sync_pin: u8) -> Result<(), Error<B::Error>> {
         let mut tmp: [u32; 1] = [0];
         self.read_from_register_to_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
-        for (i, chunk) in self.temp_buffer[3..3+4].chunks(4).enumerate() {
-            tmp[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
+        from_u8_to_u32(&self.temp_buffer[3..3+4], &mut tmp);
+        
         /* Update bit 1 with mask (set sync pause bit) */
         if enable_sync_pin == 0 {
             tmp[0] &= !(1 << 1);
@@ -1009,9 +993,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn get_integration_time(&mut self) -> Result<u32, Error<B::Error>> {
         let mut time_ms: [u32; 1] = [0];
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_INT_TIME, 20)?;
-        for (i, chunk) in self.temp_buffer[..4].chunks(4).enumerate() {
-            time_ms[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
+        from_u8_to_u32(&self.temp_buffer[..4], &mut time_ms);
+        
         time_ms[0] /= 1000;
         
         Ok(time_ms[0])
@@ -1029,9 +1012,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
         
         let mut buf: [u8; 4] = [0; 4];
         let tmp: [u32; 1] = [integration];
-        for (i, &num) in tmp.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
+        from_u32_to_u8(&tmp, &mut buf);
+        
         self.dci_replace_data_temp_buffer(VL53L8CX_DCI_INT_TIME, 20, &buf, 4, 0x00)?;
 
         Ok(())
@@ -1051,29 +1033,24 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
     #[allow(dead_code)]
     pub fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
-        let single_range: u32;
+        let mut single_range: [u32; 1] = [0];
         self.dci_read_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
 
         if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
             self.temp_buffer[1] = 1;
             self.temp_buffer[3] = 3;
-            single_range = 0;
+            single_range[0] = 0;
         } else if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
             self.temp_buffer[1] = 3;
             self.temp_buffer[3] = 2;
-            single_range = 1;
+            single_range[0] = 1;
         } else {
             return Err(Error::Other);
         }
 
         self.dci_write_data_temp_buffer(VL53L8CX_DCI_RANGING_MODE, 8)?;
-// TODO 
-        let mut buf: [u8; 4] = [0; 4];
-        let tmp: [u32; 1] = [single_range]; 
-        for (i, &num) in tmp.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_SINGLE_RANGE, 4)?;
+
+        self.dci_write_data_u32(&mut single_range, &mut [0; 4], VL53L8CX_DCI_SINGLE_RANGE, 4)?;
         
         Ok(())
     }
@@ -1126,10 +1103,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
   /* Start conversion at position 16 to avoid headers */
         let mut i: usize = 16;
-        loop {
-            if i >= self.data_read_size as usize {
-                break;
-            }
+        while i < self.data_read_size as usize {
 
             bh = BlockHeader(
                 (self.temp_buffer[i  ] as u32) << 24 | 
@@ -1144,42 +1118,37 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 msize = bh.bh_size();
             }
 
+            let src = &self.temp_buffer[i+4..i+4+msize as usize];
+
             if bh.bh_idx() == VL53L8CX_METADATA_IDX as u32 {
                 result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
             } else if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_AMBIENT_RATE_IDX as u32 {
-                for (j, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
-                    result.ambient_per_spad[j] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-                }
+                from_u8_to_u32(src, &mut result.ambient_per_spad);
+            
             } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx() == VL53L8CX_SPAD_COUNT_IDX as u32 {
-                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
-                    result.nb_spads_enabled[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-                }
+                from_u8_to_u32(src, &mut result.nb_spads_enabled);
+
             } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx() == VL53L8CX_NB_TARGET_DETECTED_IDX as u32 {
-                for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
-                    result.nb_target_detected[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-                }
+                result.nb_target_detected.copy_from_slice(src); 
+                
             } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_SIGNAL_RATE_IDX as u32 {
-                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(4).enumerate() {
-                    result.signal_per_spad[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-                }
+                from_u8_to_u32(src, &mut result.signal_per_spad);
+                
             } else if VL53L8CX_DISABLE_RANGE_SIGMA_MM == 0 && bh.bh_idx() == VL53L8CX_RANGE_SIGMA_MM_IDX as u32 {
-                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
-                    result.range_sigma_mm[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
-                }
+                from_u8_to_u16(src, &mut result.range_sigma_mm);
+                
             } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx() == VL53L8CX_DISTANCE_IDX as u32 {
                 for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
                     result.distance_mm[i] = (chunk[0] as i16) << 8 | (chunk[1] as i16);
                 }
             } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx() == VL53L8CX_REFLECTANCE_EST_PC_IDX as u32 {
-                for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
-                    result.reflectance[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-                }
+                result.reflectance.copy_from_slice(src); 
+
             } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx() == VL53L8CX_TARGET_STATUS_IDX as u32 {
-                for (j, &num) in self.temp_buffer[i+4..i+4+msize as usize].iter().enumerate() {
-                    result.target_status[j*4..j*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-                }
+                result.target_status.copy_from_slice(src); 
+
             } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx() == VL53L8CX_MOTION_DETEC_IDX as u32 {
-                let ptr: *const MotionIndicator = self.temp_buffer[i+4..i+4+msize as usize].as_ptr() as *const MotionIndicator;
+                let ptr: *const MotionIndicator = src.as_ptr() as *const MotionIndicator;
                 result.motion_indicator = unsafe { ptr.read() };
             }
             i += 4+msize as usize;

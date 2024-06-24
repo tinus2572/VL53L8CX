@@ -15,18 +15,19 @@ impl<B: BusOperation> Vl53l8cx<B> {
     #[allow(dead_code)]
     fn poll_for_answer_xtalk(&mut self, address: u16, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u32 = 0;
-        loop {
+        while timeout <= 200 {
             if self.temp_buffer[1] == expected_val {
-                break;
+                return Ok(());
             }
             self.read_from_register_to_temp_buffer(address, 4)?;
             self.delay(10);
-            if timeout >= 200 || self.temp_buffer[2] >= 0x7f {
+
+            if self.temp_buffer[2] >= 0x7f {
                 return Err(Error::Other);
             } 
             timeout += 1; 
         }
-        Ok(())
+        Err(Error::TimeoutPollForAnswer)
     }
 
     #[allow(dead_code)]
@@ -139,7 +140,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
     #[allow(dead_code)]
     fn calibrate_xtalk(&mut self, reflectance_percent: u16, nb_samples: u8, distance_mm: u16) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
-        let mut continue_loop: u8 = 1;
         let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
         let mut reflectance = reflectance_percent;
@@ -183,22 +183,17 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
 
         /* Wait for end of calibration */
-        loop {
-            if continue_loop != 1 {
-                break;
-            }
+        while timeout <= 400 {
             self.read_from_register_to_temp_buffer(0, 4)?;
             if self.temp_buffer[0] != VL53L8CX_STATUS_ERROR {
                 /* Coverglass too good for Xtalk calibration */
                 if self.temp_buffer[2] >= 0x7f && self.temp_buffer[3] & 0x80 >> 7 == 1 {
                     self.xtalk_data.copy_from_slice(&VL53L8CX_DEFAULT_XTALK);
                 }
-                continue_loop = 0;
-            } else if timeout >= 400 {
-                return Err(Error::Other);
+                break;
             } else {
-                timeout += 1;
                 self.delay(50);
+                timeout += 1;
             }
         }
 
