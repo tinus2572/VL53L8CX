@@ -13,7 +13,7 @@ use embedded_hal::{
 };
 
 use embedded_hal_bus::i2c::RefCellDevice;
-
+use embedded_hal::i2c::I2c;
 use stm32f4xx_hal::{
     gpio::{
         Output, 
@@ -23,7 +23,7 @@ use stm32f4xx_hal::{
         gpioa, 
         gpiob,
         Alternate}, 
-    i2c::{I2c, I2c1, Mode}, 
+    i2c::{I2c as StmI2c, I2c1, Mode}, 
     pac::{I2C1, USART2, Peripherals, CorePeripherals}, 
     prelude::*, 
     serial::{Config, Tx}, 
@@ -105,7 +105,7 @@ fn main() -> ! {
     let dp: Peripherals = Peripherals::take().unwrap();
     let cp: CorePeripherals = CorePeripherals::take().unwrap();
     let rcc: Rcc = dp.RCC.constrain();
-    let clocks: Clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+    let clocks: Clocks = rcc.cfgr.use_hse(8.MHz()).sysclk(84.MHz()).freeze();
     let gpioa: gpioa::Parts = dp.GPIOA.split();
     let gpiob: gpiob::Parts = dp.GPIOB.split();
     let _pwr_pin: Pin<'A', 7, Output> = gpioa.pa7.into_push_pull_output_in_state(High);
@@ -123,20 +123,20 @@ fn main() -> ! {
         .parity_none(),
         &clocks).unwrap(); 
     
-    let i2c: I2c<I2C1> = I2c1::new(
+    let i2c: StmI2c<I2C1> = I2c1::new(
         dp.I2C1,
         (scl, sda),
-        Mode::Standard{frequency:100.kHz()},
+        Mode::Standard{frequency:400.kHz()},
         &clocks);
     
     let width: usize = 4;
     write_results(&mut tx, &results, width);
 
-    let i2c_bus: RefCell<I2c<I2C1>> = RefCell::new(i2c);
+    let i2c_bus: RefCell<StmI2c<I2C1>> = RefCell::new(i2c);
     let address: SevenBitAddress = VL53L8CX_DEFAULT_I2C_ADDRESS;
     let i2c_rst_pin: i8 = -1;
 
-    let mut sensor: Vl53l8cx<Vl53l8cxI2C<RefCellDevice<I2c<I2C1>>>> = Vl53l8cx::new_i2c(
+    let mut sensor: Vl53l8cx<Vl53l8cxI2C<RefCellDevice<StmI2c<I2C1>>>> = Vl53l8cx::new_i2c(
         RefCellDevice::new(&i2c_bus), 
         address, 
         lpn_pin, 

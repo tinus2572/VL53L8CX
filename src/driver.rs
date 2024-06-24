@@ -8,8 +8,9 @@ use crate::{consts, buffers, BusOperation, bitfield, MotionIndicator, SysDelay, 
 
 bitfield! {
     struct BlockHeader(u32);
-    bh_idx, set_bh_idx: 16, 12;
-    bh_size, set_bh_size: 12, 4;
+    bh_bytes, _: 31, 0;
+    bh_idx, set_bh_idx: 31, 15;
+    bh_size, set_bh_size: 15, 4;
     bh_type, set_bh_type: 4, 0;
 }
 
@@ -67,22 +68,22 @@ impl ResultsData {
 
 fn from_u8_to_u16(src: &[u8], dst: &mut[u16]) {
     for (i, chunk) in src.chunks(2).enumerate() {
-        dst[i] = (chunk[0] as u16) << 8 | (chunk[1] as u16);
+        dst[i] = (chunk[0] as u16) | (chunk[1] as u16) << 8;
     }
 }
 fn from_u8_to_u32(src: &[u8], dst: &mut[u32]) {
     for (i, chunk) in src.chunks(4).enumerate() {
-        dst[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
+        dst[i] = (chunk[0] as u32) | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 24 | (chunk[3] as u32) << 24;
     }
 }
 fn from_u16_to_u8(src: &[u16], dst: &mut[u8]) {
     for (i, &num) in src.iter().enumerate() {
-        dst[i*2..(i+1)*2].copy_from_slice(&num.to_ne_bytes()); 
+        dst[i*2..(i+1)*2].copy_from_slice(&num.to_le_bytes()); 
     }
 }
 fn from_u32_to_u8(src: &[u32], dst: &mut[u8]) {
     for (i, &num) in src.iter().enumerate() {
-        dst[i*4..(i+1)*4].copy_from_slice(&num.to_ne_bytes()); 
+        dst[i*4..(i+1)*4].copy_from_slice(&num.to_le_bytes()); 
     }
 }
 
@@ -92,14 +93,14 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut timeout: u8 = 0;
 
         while timeout <= 200 {
-            if self.temp_buffer[pos as usize] & mask == expected_val {
-                return Ok(());
-            }
             self.read_from_register_to_temp_buffer(reg, size)?;
             self.delay(10);
             
             if size >= 4 && self.temp_buffer[2] >= 0x7F {
                 return Err(Error::Other);
+            }
+            if self.temp_buffer[pos as usize] & mask == expected_val {
+                return Ok(());
             }
             timeout+=1;
         }
@@ -236,13 +237,13 @@ impl<B: BusOperation> Vl53l8cx<B> {
     
     #[inline]
     pub fn read_from_register_to_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
-        let mut read_size: usize;
-        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
-            read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
-            let a: u8 = (reg + i as u16 >> 8) as u8;
-            let b: u8 = (reg + i as u16 & 0xFF) as u8; 
-            self.bus.write_read(&[a, b], &mut self.temp_buffer[i..i+read_size]).map_err(Error::Bus)?;
-        }
+            let mut read_size: usize;
+            for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
+                read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
+                let a: u8 = (reg + i as u16 >> 8) as u8;
+                let b: u8 = (reg + i as u16 & 0xFF) as u8; 
+                self.bus.write_read(&[a, b], &mut self.temp_buffer[i..i+read_size]).map_err(Error::Bus)?;
+            }
         Ok(())
     }
 
@@ -491,7 +492,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             /* Copy data from structure to FW format (+4 bytes to add header) */
             self.swap_buffer(data, data_size)?;
             for i in 0..(data_size-1) {
-                self.temp_buffer[data_size-1 - i+4] = data[data_size-1 - i];
+                self.temp_buffer[data_size-1 - i + 4] = data[data_size-1 - i];
             }
 
             /* Add headers and footer */
@@ -782,6 +783,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut header_config: [u32; 2] = [0, 0];
         let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];
 
+        self.temp_buffer = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         self.data_read_size = 0;
         self.streamcount = 255;
         let mut bh: BlockHeader;
@@ -816,21 +818,19 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         /* Update data size */
         for i in 0..12 {
-            // if output[i] == 0 || output_bh_enable[i/32] & (1 << (i%32)) == 0 { // ???
-            if output[i] == 0 || output_bh_enable[0] & 1<<i == 0 { // ???
+            // if output[i] == 0 || output_bh_enable[0] & 1 << i == 0 {
+            if output[i] == 0 || output_bh_enable[i/32] & (1 << (i%32)) == 0 {
                 continue;
             }
             bh = BlockHeader(output[i]);
             if bh.bh_type() >= 0x01 && bh.bh_type() < 0x0d {
                 if bh.bh_idx() >= 0x54d0 && bh.bh_idx() < 0x54d0 + 960 {
-                    bh.set_bh_size(resolution as u32);
-                } else {
-                    bh.set_bh_size(resolution as u32 * VL53L8CX_NB_TARGET_PER_ZONE);
-                }
-                self.data_read_size += bh.bh_type() * bh.bh_size();
-            } else {
-                self.data_read_size += bh.bh_size();
-            }
+                    bh.set_bh_size(resolution as u32);} 
+                else {
+                    bh.set_bh_size(resolution as u32 * VL53L8CX_NB_TARGET_PER_ZONE);}
+                self.data_read_size += bh.bh_type() * bh.bh_size();} 
+            else {
+                self.data_read_size += bh.bh_size();}
             self.data_read_size += 4;
         }
         self.data_read_size += 24;
@@ -838,7 +838,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.dci_write_data_u32(&mut output, &mut [0; 48], VL53L8CX_DCI_OUTPUT_LIST, 48)?;
         
         header_config[0] = self.data_read_size;
-        header_config[1] = 12 as u32;
+        header_config[1] = 12+1 as u32;
         self.dci_write_data_u32(&mut header_config, &mut [0; 8], VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
 
         self.dci_write_data_u32(&mut output_bh_enable, &mut [0; 16], VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
@@ -849,15 +849,15 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_to_register(0x7fff, 0x02)?;
 
         /* Start ranging session */
-        self.write_multi_to_register(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
+        self.write_multi_to_register_check(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
 
         /* Read ui range data content and compare if data size is the correct one */
         self.dci_read_data_temp_buffer(0x5440, 12)?;
-        tmp[0] = (self.temp_buffer[0x8] as u16) << 8 | (self.temp_buffer[0x8+1] as u16);
+        from_u8_to_u16(&self.temp_buffer[0x8..0x8+2], &mut tmp);
         if tmp[0] != self.data_read_size as u16 {       
             return Err(Error::Other);
-        }
+        }   
 
         /* Ensure that there is no laser safety fault */
         self.dci_read_data_temp_buffer(0xe0c4, 8)?;
