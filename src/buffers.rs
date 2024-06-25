@@ -4,7 +4,7 @@ use crate::VL53L8CX_NB_TARGET_PER_ZONE;
 
 pub const VL53L8CX_FW_NBTAR_RANGING: u8 = 2;
 
-pub const  VL53L8CX_FIRMWARE: [u8; 86016] = [
+pub const  VL53L8CX_FIRMWARE: [u8; 0x15000] = [
  
    0xe0, 0x00, 0x03, 0x08,
    0xe0, 0x00, 0x0a, 0xc8,

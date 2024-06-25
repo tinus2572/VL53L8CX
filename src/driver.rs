@@ -567,7 +567,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn init(&mut self) -> Result<(), Error<B::Error>> {
         let mut tmp: [u8; 1] = [0];    
         let mut pipe_ctrl: [u8; 4] = [VL53L8CX_NB_TARGET_PER_ZONE as u8, 0x00, 0x01, 0x00];
-        let mut single_range: [u8; 4] = [0,0,0,0x01];
+        let mut single_range: [u32; 1] = [0x01];
 
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x0009, 0x04)?;
@@ -688,7 +688,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FW_NB_TARGET, 16, &mut tmp, 1, 0x0C)?;
         }
       
-        self.dci_write_data(&mut single_range, VL53L8CX_DCI_SINGLE_RANGE, 4)?;
+        self.dci_write_data_u32(&mut single_range, &mut [0;4], VL53L8CX_DCI_SINGLE_RANGE, 4)?;
       
 
         Ok(())
@@ -849,7 +849,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_to_register(0x7fff, 0x02)?;
 
         /* Start ranging session */
-        self.write_multi_to_register_check(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
+        self.write_multi_to_register(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
 
         /* Read ui range data content and compare if data size is the correct one */
