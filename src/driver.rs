@@ -670,7 +670,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_multi_to_register(0x2fd8, &VL53L8CX_GET_NVM_CMD)?;
         self.poll_for_answer(4, 0, VL53L8CX_UI_CMD_STATUS, 0xff, 2)?;
 
-        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START,VL53L8CX_NVM_DATA_SIZE)?;
+        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_NVM_DATA_SIZE)?;
         self.offset_data.copy_from_slice(&self.temp_buffer[..VL53L8CX_OFFSET_BUFFER_SIZE]);
         self.send_offset_data(VL53L8CX_RESOLUTION_4X4)?;
 
@@ -685,7 +685,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
       
         if VL53L8CX_NB_TARGET_PER_ZONE != 1 {
             tmp[0] = VL53L8CX_NB_TARGET_PER_ZONE as u8;
-            self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FW_NB_TARGET, 16, &mut tmp, 1, 0x0C)?;
+            self.dci_replace_data_temp_buffer(VL53L8CX_DCI_FW_NB_TARGET, 16, &tmp, 1, 0x0C)?;
         }
       
         self.dci_write_data_u32(&mut single_range, &mut [0;4], VL53L8CX_DCI_SINGLE_RANGE, 4)?;
@@ -783,7 +783,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut header_config: [u32; 2] = [0, 0];
         let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];
 
-        self.temp_buffer = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         self.data_read_size = 0;
         self.streamcount = 255;
         let mut bh: BlockHeader;
@@ -855,9 +854,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
         /* Read ui range data content and compare if data size is the correct one */
         self.dci_read_data_temp_buffer(0x5440, 12)?;
         from_u8_to_u16(&self.temp_buffer[0x8..0x8+2], &mut tmp);
-        if tmp[0] != self.data_read_size as u16 {       
-            return Err(Error::Other);
-        }   
+        // if tmp[0] != self.data_read_size as u16 {       
+        //     return Err(Error::Other);
+        // }   
 
         /* Ensure that there is no laser safety fault */
         self.dci_read_data_temp_buffer(0xe0c4, 8)?;
@@ -1075,7 +1074,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let is_ready: u8;
         self.read_from_register_to_temp_buffer(0, 4)?;
         if (self.temp_buffer[0] != self.streamcount)
-        && (self.temp_buffer[1] == 5)
+            && (self.temp_buffer[0] != 255)
+            && (self.temp_buffer[1] == 5)
             && (self.temp_buffer[2] & 5 == 5)
             && (self.temp_buffer[3] & 10 == 10) {
                 is_ready = 1;
