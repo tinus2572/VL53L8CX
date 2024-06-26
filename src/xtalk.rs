@@ -27,7 +27,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             } 
             timeout += 1; 
         }
-        Err(Error::TimeoutPollForAnswer)
+        Err(Error::Timeout)
     }
 
     #[allow(dead_code)]
