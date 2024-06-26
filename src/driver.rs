@@ -144,7 +144,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             }
             self.delay(1);
             if go2_status0[0] & 0x01 != 0 {
-                return Err(Error::Other);
+                return Ok(());
             }
             timeout += 1;
         }
@@ -229,21 +229,19 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }  
 
-    fn swap_buffer(&mut self, buf: &mut [u8], size: usize) -> Result<(), Error<B::Error>> {
-        for i in (0..size).step_by(4) {
-            let tmp = [buf[i+3], buf[i+2], buf[i+1], buf[i]];
-            buf[i..i+4].copy_from_slice(&tmp);
+    fn swap_buffer(&mut self, buffer: &mut [u8], size: usize) -> Result<(), Error<B::Error>> {
+        for chunk in buffer[..size].chunks_exact_mut(4) {
+            let tmp: u32 = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            chunk.copy_from_slice(&tmp.to_le_bytes());
         }
-
         Ok(())
     }
 
     fn swap_temp_buffer(&mut self, size: usize) -> Result<(), Error<B::Error>> {
-        for i in (0..size).step_by(4) {
-            let tmp = [self.temp_buffer[i+3], self.temp_buffer[i+2], self.temp_buffer[i+1], self.temp_buffer[i]];
-            self.temp_buffer[i..i+4].copy_from_slice(&tmp);
+        for chunk in self.temp_buffer[..size].chunks_exact_mut(4) {
+            let tmp: u32 = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            chunk.copy_from_slice(&tmp.to_le_bytes());
         }
-
         Ok(())
     }
 
