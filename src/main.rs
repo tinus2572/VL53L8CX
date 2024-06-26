@@ -122,20 +122,20 @@ fn main() -> ! {
         .wordlength_8()
         .parity_none(),
         &clocks).unwrap(); 
-    
+        
     let i2c: StmI2c<I2C1> = I2c1::new(
         dp.I2C1,
         (scl, sda),
         Mode::Standard{frequency:400.kHz()},
         &clocks);
-    
-    let width: usize = 4;
+        
+    let width: usize = 8;
     write_results(&mut tx, &results, width);
 
     let i2c_bus: RefCell<StmI2c<I2C1>> = RefCell::new(i2c);
     let address: SevenBitAddress = VL53L8CX_DEFAULT_I2C_ADDRESS;
     let i2c_rst_pin: i8 = -1;
-
+    
     let mut sensor: Vl53l8cx<Vl53l8cxI2C<RefCellDevice<StmI2c<I2C1>>>> = Vl53l8cx::new_i2c(
         RefCellDevice::new(&i2c_bus), 
         address, 
@@ -144,17 +144,14 @@ fn main() -> ! {
         delay
     ).unwrap();
 
-    sensor.init_sensor(VL53L8CX_DEFAULT_I2C_ADDRESS).unwrap();
+    sensor.init_sensor(address).unwrap();
+    sensor.set_resolution(VL53L8CX_RESOLUTION_8X8).unwrap();
     sensor.start_ranging().unwrap();
     
-    let mut ready: u8 = 0;
-    
     loop {
-        while ready == 0 {
-            ready = sensor.check_data_ready().unwrap();
-        }
-        results = sensor.get_ranging_data().unwrap();
-        write_results(&mut tx, &results, width);
+        while !sensor.check_data_ready().unwrap() {} // Wait for data to be ready
+        results = sensor.get_ranging_data().unwrap(); // Get and parse the result data
+        write_results(&mut tx, &results, width); // Print the result to the output
         sensor.delay(1000);
     }
 }
