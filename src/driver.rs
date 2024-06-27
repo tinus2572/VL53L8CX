@@ -9,9 +9,9 @@ use crate::{consts, buffers, BusOperation, bitfield, MotionIndicator, SysDelay, 
 bitfield! {
     struct BlockHeader(u32);
     bh_bytes, _: 31, 0;
-    bh_idx, set_bh_idx: 31, 15;
+    bh_idx, set_bh_idx: 31, 16;
     bh_size, set_bh_size: 15, 4;
-    bh_type, set_bh_type: 4, 0;
+    bh_type, set_bh_type: 3, 0;
 }
 
 pub struct Vl53l8cx<B: BusOperation> {
@@ -836,6 +836,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             else {
                 self.data_read_size += bh.bh_size();}
             self.data_read_size += 4;
+            output[i] = bh.bh_bytes();
         }
         self.data_read_size += 24;
 
@@ -890,7 +891,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.write_to_register(0x14, 0x01)?;
 
             /* Poll for G02 status 0 MCU stop */
-            while tmp[0] & (0x80 as u8) >> 7 == 0x00 && timeout <= 500{
+            while tmp[0] & (0x80 as u8) >> 7 == 0x00 && timeout <= 500 {
                 self.read_from_register(0x6, &mut tmp)?;
                 self.delay(10);
 
@@ -1078,7 +1079,12 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn check_data_ready(&mut self) -> Result<bool, Error<B::Error>> {
         let is_ready: bool;
         self.read_from_register_to_temp_buffer(0, 4)?;
-        if (self.temp_buffer[0] != self.streamcount) && (self.temp_buffer[0] != 255) && (self.temp_buffer[1] == 5) && (self.temp_buffer[2] & 5 == 5) && (self.temp_buffer[3] & 10 == 10) {
+        if (self.temp_buffer[0] != self.streamcount) 
+            && (self.temp_buffer[0] != 0xff) 
+            && (self.temp_buffer[1] == 0x05) 
+            && (self.temp_buffer[2] & 0x05 == 0x05) 
+            && (self.temp_buffer[3] & 0x10 == 0x10) 
+        {
             is_ready = true;
             self.streamcount = self.temp_buffer[0];
         } else {

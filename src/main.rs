@@ -129,7 +129,7 @@ fn main() -> ! {
         Mode::Standard{frequency:400.kHz()},
         &clocks);
         
-    let width: usize = 8;
+    let width: usize = 4;
     write_results(&mut tx, &results, width);
 
     let i2c_bus: RefCell<StmI2c<I2C1>> = RefCell::new(i2c);
@@ -147,12 +147,12 @@ fn main() -> ! {
     sensor.init_sensor(address).unwrap();
     sensor.set_resolution(VL53L8CX_RESOLUTION_8X8).unwrap();
     sensor.start_ranging().unwrap();
-    
+
     loop {
         while !sensor.check_data_ready().unwrap() {} // Wait for data to be ready
         results = sensor.get_ranging_data().unwrap(); // Get and parse the result data
         write_results(&mut tx, &results, width); // Print the result to the output
-        sensor.delay(1000);
+        sensor.delay(100);
     }
 }
 
