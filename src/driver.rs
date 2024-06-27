@@ -1099,7 +1099,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
     pub fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
         let mut result: ResultsData = ResultsData::new();
-        let mut msize: u32;
+        let mut msize: usize;
         let mut header_id: u16;
         let mut footer_id: u16;
         let mut bh: BlockHeader;
@@ -1116,12 +1116,12 @@ impl<B: BusOperation> Vl53l8cx<B> {
             bh = BlockHeader(buf[0]);
 
             if bh.bh_type() > 0x1 && bh.bh_type() < 0xd {
-                msize = bh.bh_type() * bh.bh_size();
+                msize = (bh.bh_type() * bh.bh_size()) as usize;
             } else  {
-                msize = bh.bh_size();
+                msize = bh.bh_size() as usize;
             }
 
-            let src = &self.temp_buffer[i+4..i+4+msize as usize];
+            let src: &[u8] = &self.temp_buffer[i+4..i+4 + msize];
 
             if bh.bh_idx() == VL53L8CX_METADATA_IDX as u32 {
                 result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
@@ -1132,7 +1132,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 from_u8_to_u32(src, &mut result.nb_spads_enabled);
 
             } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx() == VL53L8CX_NB_TARGET_DETECTED_IDX as u32 {
-                result.nb_target_detected.copy_from_slice(src); 
+                result.nb_target_detected[..msize].copy_from_slice(src); 
                 
             } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_SIGNAL_RATE_IDX as u32 {
                 from_u8_to_u32(src, &mut result.signal_per_spad);
@@ -1141,20 +1141,20 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 from_u8_to_u16(src, &mut result.range_sigma_mm);
                 
             } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx() == VL53L8CX_DISTANCE_IDX as u32 {
-                for (i, chunk) in self.temp_buffer[i+4..i+4+msize as usize].chunks(2).enumerate() {
+                for (i, chunk) in self.temp_buffer[i+4..i+4 + msize].chunks(2).enumerate() {
                     result.distance_mm[i] = (chunk[0] as i16) << 8 | (chunk[1] as i16);
                 }
             } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx() == VL53L8CX_REFLECTANCE_EST_PC_IDX as u32 {
-                result.reflectance.copy_from_slice(src); 
+                result.reflectance[..msize].copy_from_slice(src); 
 
             } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx() == VL53L8CX_TARGET_STATUS_IDX as u32 {
-                result.target_status.copy_from_slice(src); 
+                result.target_status[..msize].copy_from_slice(src); 
 
             } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx() == VL53L8CX_MOTION_DETEC_IDX as u32 {
                 let ptr: *const MotionIndicator = src.as_ptr() as *const MotionIndicator;
                 result.motion_indicator = unsafe { ptr.read() };
             }
-            i += 4+msize as usize;
+            i += 4 + msize;
         }
         if VL53L8CX_USE_RAW_FORMAT == 0 {
             /* Convert data into their real format */

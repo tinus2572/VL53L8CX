@@ -73,12 +73,12 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
     ).unwrap();
 
     for j in 0..width {
-        for _ in 0..width { write!(tx, "+-----------").unwrap(); } writeln!(tx, "+").unwrap();
+        for _ in 0..width { write!(tx, "+---------------").unwrap(); } writeln!(tx, "+").unwrap();
         
         for i in 0..width {
             write!(
                 tx, 
-                "|\x1b[96m{dis:>4}\x1b[0m : \x1b[92m{sta:<4}\x1b[0m", 
+                "|\x1b[96m{dis:>6}\x1b[0m : \x1b[92m{sta:<6}\x1b[0m", 
                 dis=results.distance_mm[width*j+i], 
                 sta=results.target_status[width*j+i]
             ).unwrap();
@@ -87,13 +87,13 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
         for i in 0..width {
             write!(
                 tx, 
-                "|\x1b[93m{sig:>4}\x1b[0m : \x1b[91m{amb:<4}\x1b[0m", 
+                "|\x1b[93m{sig:>6}\x1b[0m : \x1b[91m{amb:<6}\x1b[0m", 
                 sig=results.signal_per_spad[width*j+i], 
                 amb=results.ambient_per_spad[width*j+i]
             ).unwrap();
         } write!(tx, "|\n").unwrap();
     }
-    for _ in 0..width { write!(tx, "+-----------").unwrap(); } writeln!(tx, "+").unwrap();
+    for _ in 0..width { write!(tx, "+---------------").unwrap(); } writeln!(tx, "+").unwrap();
 
 }
 
@@ -145,7 +145,6 @@ fn main() -> ! {
     ).unwrap();
 
     sensor.init_sensor(address).unwrap();
-    sensor.set_resolution(VL53L8CX_RESOLUTION_8X8).unwrap();
     sensor.start_ranging().unwrap();
 
     loop {
