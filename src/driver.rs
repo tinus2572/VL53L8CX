@@ -35,7 +35,9 @@ pub enum Error<B> {
     Other,
     Timeout,
     Mcu,
-    Go2
+    Go2,
+    CorruptedFrame,
+    InvalidParam
 }
 
 #[repr(C)]
@@ -68,6 +70,11 @@ impl ResultsData {
     }
 }
 
+fn from_u8_to_i16(src: &[u8], dst: &mut[i16]) {
+    for (i, chunk) in src.chunks(2).enumerate() {
+        dst[i] = ((chunk[0] as u16) | (chunk[1] as u16) << 8) as i16;
+    }
+}
 fn from_u8_to_u16(src: &[u8], dst: &mut[u16]) {
     for (i, chunk) in src.chunks(2).enumerate() {
         dst[i] = (chunk[0] as u16) | (chunk[1] as u16) << 8;
@@ -76,6 +83,11 @@ fn from_u8_to_u16(src: &[u8], dst: &mut[u16]) {
 fn from_u8_to_u32(src: &[u8], dst: &mut[u32]) {
     for (i, chunk) in src.chunks(4).enumerate() {
         dst[i] = (chunk[0] as u32) | (chunk[1] as u32) << 8 | (chunk[2] as u32) << 16 | (chunk[3] as u32) << 24;
+    }
+}
+fn from_i16_to_u8(src: &[i16], dst: &mut[u8]) {
+    for (i, &num) in src.iter().enumerate() {
+        dst[i*2..(i+1)*2].copy_from_slice(&num.to_le_bytes()); 
     }
 }
 fn from_u16_to_u8(src: &[u16], dst: &mut[u8]) {
@@ -133,7 +145,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
     fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut signal_grid: [u32; 64] = [0; 64];
-        let mut range_grid: [u16; 64] = [0; 64];
+        let mut range_grid: [i16; 64] = [0; 64];
         let dss_4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x00, 0x08, 0x10, 0x10, 0x07];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x03, 0x01, 0x01, 0xE4];
 
@@ -144,19 +156,29 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.temp_buffer[0x10..0x10+dss_4x4.len()].copy_from_slice(&dss_4x4);
             self.swap_temp_buffer(VL53L8CX_OFFSET_BUFFER_SIZE)?;
             from_u8_to_u32(&mut self.temp_buffer[0x3c..0x3c+256], &mut signal_grid);
-            from_u8_to_u16(&mut self.temp_buffer[0x140..0x140+128], &mut range_grid);
+            from_u8_to_i16(&mut self.temp_buffer[0x140..0x140+128], &mut range_grid);
             
             for j in 0..4 {
                 for i in 0..4 {
-                    signal_grid[i + (4 * j)] = signal_grid[(2 * i) + (16 * j) + 0]/4 + signal_grid[(2 * i) + (16 * j) + 1]/4 + signal_grid[(2 * i) + (16 * j) + 8]/4 + signal_grid[(2 * i) + (16 * j) + 9]/4;
-                    range_grid[i + (4 * j)] = range_grid[(2 * i) + (16 * j) + 0]/4 + range_grid[(2 * i) + (16 * j) + 1]/4 + range_grid[(2 * i) + (16 * j) + 8]/4 + range_grid[(2 * i) + (16 * j) + 9]/4;
+                    signal_grid[i + (4 * j)] = ((
+                          signal_grid[(2 * i) + (16 * j) + 0] as u64 
+                        + signal_grid[(2 * i) + (16 * j) + 1] as u64 
+                        + signal_grid[(2 * i) + (16 * j) + 8] as u64 
+                        + signal_grid[(2 * i) + (16 * j) + 9] as u64 
+                    ) /4) as u32;
+                    range_grid[i + (4 * j)] = ((
+                          range_grid[(2 * i) + (16 * j) + 0] as i32 
+                        + range_grid[(2 * i) + (16 * j) + 1] as i32 
+                        + range_grid[(2 * i) + (16 * j) + 8] as i32 
+                        + range_grid[(2 * i) + (16 * j) + 9] as i32
+                    ) /4) as i16;
                 }
             }
             signal_grid[16..].copy_from_slice(&[0;48]);
             range_grid[16..].copy_from_slice(&[0;48]);
 
             from_u32_to_u8(&mut signal_grid, &mut self.temp_buffer[0x3c..0x3c+256]);
-            from_u16_to_u8(&mut range_grid, &mut self.temp_buffer[0x140..0x140+128]);
+            from_i16_to_u8(&mut range_grid, &mut self.temp_buffer[0x140..0x140+128]);
 
             self.swap_temp_buffer(VL53L8CX_OFFSET_BUFFER_SIZE)?;
         }
@@ -190,17 +212,20 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
             for j in 0..4 {
                 for i in 0..4 {
-                    signal_grid[i + (4 * j)] = signal_grid[(2 * i) + (16 * j) + 0]/4 + signal_grid[(2 * i) + (16 * j) + 1]/4 + signal_grid[(2 * i) + (16 * j) + 8]/4 + signal_grid[(2 * i) + (16 * j) + 9]/4;
+                    signal_grid[i + (4 * j)] = ((
+                        signal_grid[(2 * i) + (16 * j) + 0] as u64 
+                      + signal_grid[(2 * i) + (16 * j) + 1] as u64 
+                      + signal_grid[(2 * i) + (16 * j) + 8] as u64 
+                      + signal_grid[(2 * i) + (16 * j) + 9] as u64 
+                  ) /4) as u32;
                 }
             }
             signal_grid[16..].copy_from_slice(&[0;48]);
             from_u32_to_u8(&mut signal_grid, &mut self.temp_buffer[0x34..0x34+256]);
-            
 
             self.swap_temp_buffer(VL53L8CX_XTALK_BUFFER_SIZE)?;
             self.temp_buffer[0x134..0x134+profile_4x4.len()].copy_from_slice(&profile_4x4);
-            let tmp: [u8; 4] = [0; 4];
-            self.temp_buffer[0x078..0x078+4].copy_from_slice(&tmp);
+            self.temp_buffer[0x078..0x078+4].copy_from_slice(&[0; 4]);
         }
 
         self.write_multi_to_register_temp_buffer(0x2CF8, VL53L8CX_XTALK_BUFFER_SIZE)?;
@@ -755,7 +780,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.temp_buffer[0x06] = 64;
             self.temp_buffer[0x09] = 4;
             self.dci_write_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+            self.dci_read_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
             self.temp_buffer[0x00] = 4;
             self.temp_buffer[0x01] = 4;
             self.temp_buffer[0x04] = 8;
@@ -767,14 +792,14 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.temp_buffer[0x06] = 16;
             self.temp_buffer[0x09] = 1;
             self.dci_write_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.dci_read_data_temp_buffer(VL53L8CX_DCI_DSS_CONFIG, 8)?;
+            self.dci_read_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
             self.temp_buffer[0x00] = 8;
             self.temp_buffer[0x01] = 8;
             self.temp_buffer[0x04] = 4;
             self.temp_buffer[0x05] = 4;
             self.dci_write_data_temp_buffer(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
         } else {
-            return Err(Error::Other);
+            return Err(Error::InvalidParam);
         }
         self.send_offset_data(resolution)?;
         self.send_xtalk_data(resolution)?;
@@ -968,7 +993,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
             self.dci_replace_data_temp_buffer(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order], 1, 0x0)?;
         } else {
-            return Err(Error::Other);
+            return Err(Error::InvalidParam);
         }
         Ok(())
     }
@@ -986,7 +1011,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn set_sharpener_percent(&mut self, sharpener_percent: u8) -> Result<(), Error<B::Error>> {
         let sharpener: u8;
         if sharpener_percent >= 100 {
-            return Err(Error::Other);
+            return Err(Error::InvalidParam);
         }
         sharpener = sharpener_percent * 255 / 100;
         self.dci_replace_data_temp_buffer(VL53L8CX_DCI_SHARPENER, 16, &[sharpener], 1, 0xd)?;
@@ -1011,7 +1036,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         /* Integration time must be between 2ms and 1000ms */
         if integration < 2 || integration > 1000 {
-            return Err(Error::Other);
+            return Err(Error::InvalidParam);
         }
         integration *= 1000;
         
@@ -1121,11 +1146,16 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 msize = bh.bh_size() as usize;
             }
 
-            let src: &[u8] = &self.temp_buffer[i+4..i+4 + msize];
-
+            let mut src: &[u8] = &[0];
+            if i+4+msize <= VL53L8CX_TEMPORARY_BUFFER_SIZE {
+                src = &self.temp_buffer[i+4..i+4 + msize];
+            }
+            
             if bh.bh_idx() == VL53L8CX_METADATA_IDX as u32 {
                 result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
-            } else if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_AMBIENT_RATE_IDX as u32 {
+            } 
+            
+            if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_AMBIENT_RATE_IDX as u32 {
                 from_u8_to_u32(src, &mut result.ambient_per_spad);
             
             } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx() == VL53L8CX_SPAD_COUNT_IDX as u32 {
@@ -1141,9 +1171,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 from_u8_to_u16(src, &mut result.range_sigma_mm);
                 
             } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx() == VL53L8CX_DISTANCE_IDX as u32 {
-                for (i, chunk) in self.temp_buffer[i+4..i+4 + msize].chunks(2).enumerate() {
-                    result.distance_mm[i] = (chunk[0] as i16) << 8 | (chunk[1] as i16);
-                }
+                from_u8_to_i16(src, &mut result.distance_mm);
             } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx() == VL53L8CX_REFLECTANCE_EST_PC_IDX as u32 {
                 result.reflectance[..msize].copy_from_slice(src); 
 
@@ -1171,7 +1199,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
                     }
                 }
                 if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 {
-                    result.reflectance[i] /= 128;
+                    result.reflectance[i] /= 2;
+                }
+                if VL53L8CX_RANGE_SIGMA_MM == 0 {
+                    result.range_sigma_mm[i] /= 128;
                 }
                 if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 {
                     result.signal_per_spad[i] /= 2048;
@@ -1205,7 +1236,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         footer_id |= (self.temp_buffer[self.data_read_size as usize - 3] as u16) & 0x00ff;
 
         if header_id != footer_id {
-            return Err(Error::Other);
+            return Err(Error::CorruptedFrame);
         }
 
         Ok(result)
