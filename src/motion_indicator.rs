@@ -135,7 +135,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
             arr[124+i] = motion_config.indicator_format_2[i];
         }
 
-        self.dci_write_data(&mut arr, VL53L8CX_DCI_MOTION_DETECTOR_CFG, 156)?;
+        self.temp_buffer[..arr.len()].copy_from_slice(&arr);
+        self.dci_write_data(VL53L8CX_DCI_MOTION_DETECTOR_CFG, 156)?;
         
         motion_config.ref_bin_offset = (arr[0] as i32) << 24 | (arr[1] as i32) << 16 | (arr[2] as i32) << 8 | (arr[3] as i32);
         motion_config.detection_threshold = (arr[4] as u32) << 24 | (arr[5] as u32) << 16 | (arr[6] as u32) << 8 | (arr[7] as u32);

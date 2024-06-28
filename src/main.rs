@@ -61,39 +61,41 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
     writeln!(tx, "Cell Format :\n").unwrap();
     writeln!(
         tx, 
-        "\x1b[96m{dis:>20}\x1b[0m : \x1b[92m{sta:<20}\x1b[0m", 
+        "\x1b[96m{dis:>20}\x1b[0m \x1b[92m{sta:<20}\x1b[0m", 
         dis="Distance [mm]", 
         sta="Status"
     ).unwrap();
     writeln!(
         tx, 
-        "\x1b[93m{sig:>20}\x1b[0m : \x1b[91m{amb:<20}\x1b[0m", 
+        "\x1b[93m{sig:>20}\x1b[0m \x1b[91m{amb:<20}\x1b[0m", 
         sig="Signal [kcps/spad]", 
         amb="Ambient [kcps/spad]"
     ).unwrap();
 
     for j in 0..width {
-        for _ in 0..width { write!(tx, "+---------------").unwrap(); } writeln!(tx, "+").unwrap();
+        for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
         
         for i in 0..width {
             write!(
                 tx, 
-                "|\x1b[96m{dis:>6}\x1b[0m : \x1b[92m{sta:<6}\x1b[0m", 
+                "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<2}\x1b[0m", 
                 dis=results.distance_mm[width*j+i], 
                 sta=results.target_status[width*j+i]
             ).unwrap();
         } write!(tx, "|\n").unwrap();
 
         for i in 0..width {
+            let mut sig: u32 = results.signal_per_spad[width*j+i];
+            if sig > 9999 { sig = 9999; }
             write!(
                 tx, 
-                "|\x1b[93m{sig:>6}\x1b[0m : \x1b[91m{amb:<6}\x1b[0m", 
-                sig=results.signal_per_spad[width*j+i], 
+                "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<2}\x1b[0m", 
+                sig=sig, 
                 amb=results.ambient_per_spad[width*j+i]
             ).unwrap();
         } write!(tx, "|\n").unwrap();
     }
-    for _ in 0..width { write!(tx, "+---------------").unwrap(); } writeln!(tx, "+").unwrap();
+    for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
 
 }
 

@@ -88,7 +88,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
         for (i, &num) in output.iter().enumerate() {
             buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
         }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_LIST, 68)?;
+        self.temp_buffer[..buf.len()].copy_from_slice(&buf);
+        self.dci_write_data(VL53L8CX_DCI_OUTPUT_LIST, 68)?;
         for (i, chunk) in buf.chunks(4).enumerate() {
             output[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
         }
@@ -101,7 +102,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
         for (i, &num) in header_config.iter().enumerate() {
             buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
         }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
+        self.temp_buffer[..buf.len()].copy_from_slice(&buf);
+        self.dci_write_data(VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
         for (i, chunk) in buf.chunks(4).enumerate() {
             header_config[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
         }
@@ -109,7 +111,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
         for (i, &num) in output_bh_enable.iter().enumerate() {
             buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
         }
-        self.dci_write_data(&mut buf, VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
+        self.temp_buffer[..buf.len()].copy_from_slice(&buf);
+        self.dci_write_data(VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
         for (i, chunk) in buf.chunks(4).enumerate() {
             output_bh_enable[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
         }
@@ -119,7 +122,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
     #[allow(dead_code)]
     fn get_xtalk_margin(&mut self) -> Result<u32, Error<B::Error>> {
-        self.dci_read_data_temp_buffer(VL53L8CX_DCI_XTALK_CFG, 16)?;
+        self.dci_read_data(VL53L8CX_DCI_XTALK_CFG, 16)?;
         let mut xtalk_margin: u32 = (self.temp_buffer[0] as u32) << 24 | (self.temp_buffer[1] as u32) << 16 | (self.temp_buffer[2] as u32) << 8 | self.temp_buffer[3] as u32;
         xtalk_margin /= 2048;
         Ok(xtalk_margin)
@@ -132,7 +135,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         if xtalk_margin > 10000 {
             return Err(Error::Other);
         }
-        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_XTALK_CFG, 16, &margin_kcps, 4, 0)?;
+        self.dci_replace_data(VL53L8CX_DCI_XTALK_CFG, 16, &margin_kcps, 4, 0)?;
 
         Ok(())
     }
@@ -171,9 +174,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
         distance *= 4;
 
         /* Update required fields */
-        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_CAL_CFG, 8, &distance.to_ne_bytes(), 2, 0)?;
-        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_CAL_CFG, 8, &reflectance.to_ne_bytes(), 2, 2)?;
-        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_CAL_CFG, 8, &[samples], 1, 4)?;
+        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &distance.to_ne_bytes(), 2, 0)?;
+        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &reflectance.to_ne_bytes(), 2, 2)?;
+        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &[samples], 1, 4)?;
 
         /* Program output for Xtalk calibration */
         self.program_output_config()?;

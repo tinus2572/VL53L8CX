@@ -18,7 +18,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 #[allow(dead_code)]
      fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
         let enabled: u8;
-        self.dci_read_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
+        self.dci_read_data(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
         enabled = self.temp_buffer[0x1];
         Ok(enabled)
     }
@@ -35,9 +35,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
             tmp[0] = 0x0C;
         }
         /* Set global interrupt config */
-        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8, &grp_global_config, 4, 0x00)?;
+        self.dci_replace_data(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8, &grp_global_config, 4, 0x00)?;
         /* Update interrupt config */
-        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_DET_THRESH_CONFIG, 20, &tmp, 1, 0x11)?;
+        self.dci_replace_data(VL53L8CX_DCI_DET_THRESH_CONFIG, 20, &tmp, 1, 0x11)?;
         Ok(())
     }
 
@@ -52,8 +52,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
             arr[i+10] = thresholds[i].zone_num;
             arr[i+11] = thresholds[i].math_op;
         }
-
-        self.dci_read_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
+        self.temp_buffer[..arr.len()].copy_from_slice(&arr);
+        self.dci_read_data(VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
         
         for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
             thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
@@ -90,7 +90,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
 #[allow(dead_code)]
     fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
-        let mut grp_valid_target_cfg: [u8; 8] = [0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05];
+        let grp_valid_target_cfg: [u8; 8] = [0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05];
         for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
             if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
                 thresholds[i].param_low_thresh  *= 4;
@@ -112,7 +112,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 thresholds[i].param_high_thresh *= 65535;
             }
         } 
-        self.dci_write_data(&mut grp_valid_target_cfg, VL53L8CX_DCI_DET_THRESH_VALID_STATUS, 8)?;
+        self.temp_buffer[..8].copy_from_slice(&grp_valid_target_cfg);
+        self.dci_write_data(VL53L8CX_DCI_DET_THRESH_VALID_STATUS, 8)?;
         
         
         let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
@@ -125,7 +126,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
             arr[i+11] = thresholds[i].math_op;
         }
 
-        self.dci_write_data(&mut arr, VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
+        self.temp_buffer[..arr.len()].copy_from_slice(&arr);
+        self.dci_write_data(VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
         
         for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
             thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
@@ -141,7 +143,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
 #[allow(dead_code)]
     fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
-        self.dci_read_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
+        self.dci_read_data(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
         let auto_stop: u8 = self.temp_buffer[0x03];
         Ok(auto_stop)
     }
@@ -149,7 +151,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 #[allow(dead_code)]
     fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
         let tmp: [u8; 1] = [auto_stop];
-        self.dci_replace_data_temp_buffer(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
+        self.dci_replace_data(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
         Ok(auto_stop)
     }
 }
