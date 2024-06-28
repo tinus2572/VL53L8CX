@@ -1,10 +1,11 @@
 
 use consts::*;
 use buffers::*;
+use utils::*;
 
 use stm32f4xx_hal::prelude::*;
 
-use crate::{consts, buffers, BusOperation, bitfield, MotionIndicator, SysDelay, Output, PushPull, Pin};
+use crate::{consts, buffers, utils, BusOperation, bitfield, MotionIndicator, SysDelay, Output, PushPull, Pin};
 
 bitfield! {
     struct BlockHeader(u32);
@@ -70,57 +71,13 @@ impl ResultsData {
     }
 }
 
-fn from_u8_to_i16(src: &[u8], dst: &mut[i16]) {
-    for (i, chunk) in src.chunks(2).enumerate() {
-        dst[i] = ((chunk[0] as u16) | (chunk[1] as u16) << 8) as i16;
-    }
-}
-
-fn from_u8_to_u16(src: &[u8], dst: &mut[u16]) {
-    for (i, chunk) in src.chunks(2).enumerate() {
-        dst[i] = (chunk[0] as u16) | (chunk[1] as u16) << 8;
-    }
-}
-
-fn from_u8_to_u32(src: &[u8], dst: &mut[u32]) {
-    for (i, chunk) in src.chunks(4).enumerate() {
-        dst[i] = (chunk[0] as u32) | (chunk[1] as u32) << 8 | (chunk[2] as u32) << 16 | (chunk[3] as u32) << 24;
-    }
-}
-
-fn from_i16_to_u8(src: &[i16], dst: &mut[u8]) {
-    for (i, &num) in src.iter().enumerate() {
-        dst[i*2..(i+1)*2].copy_from_slice(&num.to_le_bytes()); 
-    }
-}
-
-#[allow(dead_code)]
-fn from_u16_to_u8(src: &[u16], dst: &mut[u8]) {
-    for (i, &num) in src.iter().enumerate() {
-        dst[i*2..(i+1)*2].copy_from_slice(&num.to_le_bytes()); 
-    }
-}
-
-fn from_u32_to_u8(src: &[u32], dst: &mut[u8]) {
-    for (i, &num) in src.iter().enumerate() {
-        dst[i*4..(i+1)*4].copy_from_slice(&num.to_le_bytes()); 
-    }
-}
-
-fn swap_buffer(buffer: &mut [u8], size: usize) {
-    for chunk in buffer[..size].chunks_exact_mut(4) {
-        let tmp: u32 = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-        chunk.copy_from_slice(&tmp.to_le_bytes());
-    }
-}
-
 impl<B: BusOperation> Vl53l8cx<B> {
 
-    fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
+    pub fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
 
         while timeout <= 200 {
-            self.read_from_register_to_temp_buffer(reg, size)?;
+            self.read_from_register(reg, size)?;
             self.delay(10);
             
             if size >= 4 && self.temp_buffer[2] >= 0x7F {
@@ -134,21 +91,18 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Err(Error::Timeout)
     }
 
-    fn poll_for_mcu_boot(&mut self) -> Result<(), Error<B::Error>> {
-        let mut go2_status0: [u8; 1] = [0];
-        let mut go2_status1: [u8; 1] = [0];
+    pub fn poll_for_mcu_boot(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
 
         while timeout <= 500 {
-            self.read_from_register(0x06, &mut go2_status0)?;
-            if go2_status0[0] & 0x80 != 0 {
-                self.read_from_register(0x07, &mut go2_status1)?;
-                if go2_status1[0] & 0x01 != 0 {
+            self.read_from_register(0x06, 2)?;
+            if self.temp_buffer[0] & 0x80 != 0 {
+                if self.temp_buffer[1] & 0x01 != 0 {
                     return Ok(());
                 }
             }
             self.delay(1);
-            if go2_status0[0] & 0x01 != 0 {
+            if self.temp_buffer[0] & 0x01 != 0 {
                 return Ok(());
             }
             timeout += 1;
@@ -156,7 +110,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Err(Error::Timeout)
     }
 
-    fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut signal_grid: [u32; 64] = [0; 64];
         let mut range_grid: [i16; 64] = [0; 64];
         let dss_4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x00, 0x08, 0x10, 0x10, 0x07];
@@ -207,7 +161,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
 
-    fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let res4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x17, 0x08, 0x10, 0x10, 0x07];
         let dss_4x4: [u8; 8] = [0x00, 0x78, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08];
         let profile_4x4: [u8; 4] = [0xA0, 0xFC, 0x01, 0x00];
@@ -247,22 +201,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }  
 
-    #[inline]
-    pub fn read_from_register(&mut self, reg: u16, rbuf: &mut [u8]) -> Result<(), Error<B::Error>> {
-        let size = rbuf.len();
-        let mut read_size: usize;
-
-        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
-            read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
-            let a: u8 = (reg + i as u16 >> 8) as u8;
-            let b: u8 = (reg + i as u16 & 0xFF) as u8; 
-            self.bus.write_read(&[a, b], &mut rbuf[i..i+read_size]).map_err(Error::Bus)?;
-        }
-        Ok(())
-    }
-    
-    #[inline]
-    pub fn read_from_register_to_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
+    pub fn read_from_register(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
             let mut read_size: usize;
             for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN) {
                 read_size = if size - i > DEFAULT_I2C_BUFFER_LEN { DEFAULT_I2C_BUFFER_LEN } else { size - i };
@@ -273,7 +212,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
-    #[inline]
     pub fn write_to_register(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
         let a: u8 = (reg >> 8) as u8;
         let b: u8 = (reg & 0xFF) as u8; 
@@ -282,28 +220,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
     
-    #[inline]
-    #[allow(dead_code)]
-    pub fn write_to_register_check(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8) as u8;
-        let b: u8 = (reg & 0xFF) as u8; 
-        self.bus.write(&[a, b, val]).map_err(Error::Bus)?;
-        
-        // Check
-        let mut arr: [u8; 1] = [0];
-        self.read_from_register(reg, &mut arr)?;
-        if arr[0] != val {
-            return Err(Error::Other);
-        }
-        Ok(())
-    }
-
-    #[inline]
     pub fn write_multi_to_register(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
         let size = wbuf.len();
         let mut write_size: usize;
         let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
-
+        
         for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
             write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
             tmp[0] = (reg + i as u16 >> 8) as u8;
@@ -313,36 +234,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         }   
         Ok(())
     }
-    
-    #[inline]
-    #[allow(dead_code)]
-    pub fn write_multi_to_register_check(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
-        let size = wbuf.len();
-        let mut write_size: usize;
-        let mut arr: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
-        let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
-        
-        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
-            write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
-            tmp[0] = (reg + i as u16 >> 8) as u8;
-            tmp[1] = (reg + i as u16 & 0xFF) as u8;
-            tmp[2..2+write_size].copy_from_slice(&wbuf[i..i+write_size]);
-            self.bus.write(&tmp[..2+write_size]).map_err(Error::Bus)?;   
-            
-            // Check
-            self.read_from_register(reg + i as u16, &mut arr[..write_size])?;
-            if arr[..write_size] != wbuf[i..i+write_size] {
-                return Err(Error::Other);
-            }    
-        }   
-        Ok(())
-    }
-    
-    #[inline]
+   
     pub fn write_multi_to_register_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
         let mut write_size: usize;
         let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
-
+        
         for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
             write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
             tmp[0] = (reg + i as u16 >> 8) as u8;
@@ -351,32 +247,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.bus.write(&tmp[..2+write_size]).map_err(Error::Bus)?;   
         }
         Ok(())
-    } 
-    
-    #[inline]
-    #[allow(dead_code)]
-    pub fn write_multi_to_register_temp_buffer_check(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
-        let mut write_size: usize;
-        let mut arr: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
-        let mut tmp: [u8; DEFAULT_I2C_BUFFER_LEN] = [0; DEFAULT_I2C_BUFFER_LEN];
-        
-        for i in (0..size).step_by(DEFAULT_I2C_BUFFER_LEN-2) {
-            write_size = if size - i > DEFAULT_I2C_BUFFER_LEN-2 { DEFAULT_I2C_BUFFER_LEN-2 } else { size - i };
-            tmp[0] = (reg + i as u16 >> 8) as u8;
-            tmp[1] = (reg + i as u16 & 0xFF) as u8;
-            tmp[2..2+write_size].copy_from_slice(&self.temp_buffer[i..i+write_size]);
-            self.bus.write(&tmp[..2+write_size]).map_err(Error::Bus)?;   
-            
-            // Check
-            self.read_from_register(reg + i as u16, &mut arr[..write_size])?;
-            if arr[..write_size] != self.temp_buffer[i..i+write_size] {
-                return Err(Error::Other);
-            }    
-        }  
-        Ok(())
     }
 
-    #[inline]
     pub fn delay(&mut self, ms: u32) {
         self.delay.delay_ms(ms);
     }
@@ -393,25 +265,13 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn i2c_reset(&mut self) -> Result<(), Error<B::Error>>{
-        // self.i2c_rst_pin.set_low();
-        self.delay(10);
-        // self.i2c_rst_pin.set_high();
-        self.delay(10);
-        // self.i2c_rst_pin.set_low();
-        self.delay(10);
-        Ok(())
-    }
-
     pub fn is_alive(&mut self) -> Result<(), Error<B::Error>> {
-        let mut device_id: [u8; 1] = [0];
-        let mut revision_id: [u8; 1] = [0];
         self.write_to_register(0x7fff, 0x00)?;
-        self.read_from_register(0, &mut device_id)?;
-        self.read_from_register(1, &mut revision_id)?;
+        self.read_from_register(0, 2)?;
         self.write_to_register(0x7fff, 0x02)?;
-        if (device_id[0] != 0xF0 as u8) || (revision_id[0] != 0x0C as u8) {
+        let device_id: u8 = self.temp_buffer[0];
+        let revision_id: u8 = self.temp_buffer[1];
+        if (device_id != 0xF0) || (revision_id != 0x0C) {
             return Err(Error::Other);
         }
 
@@ -438,7 +298,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
         
         /* Read new data sent (4 bytes header + data_size + 8 bytes footer) */
-        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, read_size)?;
+        self.read_from_register(VL53L8CX_UI_CMD_START, read_size)?;
         swap_buffer(&mut self.temp_buffer, read_size);
         
         /* Copy data from FW into input structure (-4 bytes to remove header) */
@@ -496,7 +356,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
     }   
 
     pub fn init(&mut self) -> Result<(), Error<B::Error>> {
-        let mut tmp: [u8; 1] = [0];    
         let pipe_ctrl: [u8; 4] = [VL53L8CX_NB_TARGET_PER_ZONE as u8, 0x00, 0x01, 0x00];
         let single_range: [u32; 1] = [0x01];
 
@@ -504,7 +363,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_to_register(0x0009, 0x04)?;
         self.write_to_register(0x000F, 0x40)?;
         self.write_to_register(0x000A, 0x03)?;
-        self.read_from_register(0x7FFF, &mut tmp)?;
+        self.read_from_register(0x7FFF, 1)?;
         self.write_to_register(0x000C, 0x01)?;
 
         self.write_to_register(0x0101, 0x00)?;
@@ -537,7 +396,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_to_register(0x7fff, 0x00)?;
 
         /* Enable host access to GO1 */
-        self.read_from_register(0x7fff, &mut tmp)?;
+        self.read_from_register(0x7fff, 1)?;
         self.write_to_register(0x0C, 0x01)?;
 
         /* Power ON status */
@@ -559,7 +418,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         /* Wake up MCU */
         self.write_to_register(0x7fff, 0x00)?;
-        self.read_from_register(0x7fff, &mut tmp)?;
+        self.read_from_register(0x7fff, 1)?;
 
         self.write_to_register(0x7fff, 0x01)?;
         self.write_to_register(0x20, 0x07)?;
@@ -581,7 +440,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         self.delay(5);
         self.write_to_register(0x7fff, 0x00)?;
-        self.read_from_register(0x7fff, &mut tmp)?;
+        self.read_from_register(0x7fff, 1)?;
         self.write_to_register(0x0C, 0x01)?;
 
         /* Reset MCU and wait boot */
@@ -591,7 +450,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_to_register(0x116, 0x42)?;
         self.write_to_register(0x117, 0x00)?;
         self.write_to_register(0x0B, 0x00)?;
-        self.read_from_register(0x7fff, &mut tmp)?;
+        self.read_from_register(0x7fff, 1)?;
         self.write_to_register(0x0C, 0x00)?;
         self.write_to_register(0x0B, 0x01)?;
 
@@ -603,7 +462,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.write_multi_to_register(0x2fd8, &VL53L8CX_GET_NVM_CMD)?;
         self.poll_for_answer(4, 0, VL53L8CX_UI_CMD_STATUS, 0xff, 2)?;
 
-        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_NVM_DATA_SIZE)?;
+        self.read_from_register(VL53L8CX_UI_CMD_START, VL53L8CX_NVM_DATA_SIZE)?;
         self.offset_data.copy_from_slice(&self.temp_buffer[..VL53L8CX_OFFSET_BUFFER_SIZE]);
         self.send_offset_data(VL53L8CX_RESOLUTION_4X4)?;
 
@@ -618,55 +477,12 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.dci_write_data(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
       
         if VL53L8CX_NB_TARGET_PER_ZONE != 1 {
-            tmp[0] = VL53L8CX_NB_TARGET_PER_ZONE as u8;
+            let tmp: [u8; 1] = [VL53L8CX_NB_TARGET_PER_ZONE as u8];
             self.dci_replace_data(VL53L8CX_DCI_FW_NB_TARGET, 16, &tmp, 1, 0x0C)?;
         }
         from_u32_to_u8(&single_range, &mut self.temp_buffer[..4]);
         self.dci_write_data( VL53L8CX_DCI_SINGLE_RANGE, 4)?;
       
-
-        Ok(())
-    }
-
-    pub fn get_resolution(&mut self) -> Result<u8, Error<B::Error>> {
-        self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-        let resolution: u8 = self.temp_buffer[0x00] * self.temp_buffer[0x01];
-
-        Ok(resolution)
-    }
-
-    pub fn set_resolution(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
-
-        if resolution == VL53L8CX_RESOLUTION_4X4 {
-            self.dci_read_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.temp_buffer[0x04] = 64;
-            self.temp_buffer[0x06] = 64;
-            self.temp_buffer[0x09] = 4;
-            self.dci_write_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-            self.temp_buffer[0x00] = 4;
-            self.temp_buffer[0x01] = 4;
-            self.temp_buffer[0x04] = 8;
-            self.temp_buffer[0x05] = 8;
-            self.dci_write_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-        } else if resolution == VL53L8CX_RESOLUTION_8X8 {
-            self.dci_read_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.temp_buffer[0x04] = 16;
-            self.temp_buffer[0x06] = 16;
-            self.temp_buffer[0x09] = 1;
-            self.dci_write_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-            self.temp_buffer[0x00] = 8;
-            self.temp_buffer[0x01] = 8;
-            self.temp_buffer[0x04] = 4;
-            self.temp_buffer[0x05] = 4;
-            self.dci_write_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-        } else {
-            return Err(Error::InvalidParam);
-        }
-        self.send_offset_data(resolution)?;
-        self.send_xtalk_data(resolution)?;
-
         Ok(())
     }
 
@@ -768,11 +584,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
     pub fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
         let mut auto_flag_stop: [u32; 1] = [0];
-        let mut buf: [u8; 4] = [0; 4];
-        let mut tmp: [u8; 1] = [0];
 
-        self.read_from_register(0x2ffc, &mut buf)?;
-        from_u8_to_u32(&buf, &mut auto_flag_stop);
+        self.read_from_register(0x2ffc, 4)?;
+        from_u8_to_u32(&self.temp_buffer[..4], &mut auto_flag_stop);
 
         if auto_flag_stop[0] != 0x4ff {
             self.write_to_register(0x7fff, 0x00)?;
@@ -782,8 +596,8 @@ impl<B: BusOperation> Vl53l8cx<B> {
             self.write_to_register(0x14, 0x01)?;
 
             /* Poll for G02 status 0 MCU stop */
-            while tmp[0] & (0x80 as u8) >> 7 == 0x00 && timeout <= 500 {
-                self.read_from_register(0x6, &mut tmp)?;
+            while self.temp_buffer[0] & (0x80 as u8) >> 7 == 0x00 && timeout <= 500 {
+                self.read_from_register(0x6, 1)?;
                 self.delay(10);
 
                 timeout += 1;
@@ -791,10 +605,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
         }
 
         /* Check GO2 status 1 if status is still OK */
-        self.read_from_register(0x6, &mut tmp)?;
-        if tmp[0] & 0x80 != 0 {
-            self.read_from_register(0x7, &mut tmp)?;
-            if tmp[0] != 0x84 && tmp[0] != 0x85 {
+        self.read_from_register(0x6, 1)?;
+        if self.temp_buffer[0] & 0x80 != 0 {
+            self.read_from_register(0x7, 1)?;
+            if self.temp_buffer[0] != 0x84 && self.temp_buffer[0] != 0x85 {
                 return Ok(());
             }
         }
@@ -813,7 +627,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
     
     pub fn check_data_ready(&mut self) -> Result<bool, Error<B::Error>> {
         let is_ready: bool;
-        self.read_from_register_to_temp_buffer(0, 4)?;
+        self.read_from_register(0, 4)?;
         if (self.temp_buffer[0] != self.streamcount) 
             && (self.temp_buffer[0] != 0xff) 
             && (self.temp_buffer[1] == 0x05) 
@@ -838,7 +652,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut header_id: u16;
         let mut footer_id: u16;
         let mut bh: BlockHeader;
-        self.read_from_register_to_temp_buffer(0, self.data_read_size as usize)?;
+        self.read_from_register(0, self.data_read_size as usize)?;
         self.streamcount = self.temp_buffer[0];
         swap_buffer(&mut self.temp_buffer, self.data_read_size as usize);
 
@@ -951,201 +765,5 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(result)
     }    
-
-    #[allow(dead_code)]
-    pub fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
-        let power_mode: u8;
-        let mut tmp: [u8; 1] = [0];
-        self.write_to_register(0x7fff, 0x00)?;
-        self.read_from_register(0x009, &mut tmp)?;    
-        if tmp[0] == 0x4 {
-            power_mode = VL53L8CX_POWER_MODE_WAKEUP;
-        } else if tmp[0] == 0x2 {
-            power_mode = VL53L8CX_POWER_MODE_SLEEP;
-        } else {
-            return Err(Error::Other);
-        }
-        self.write_to_register(0x7fff, 0x02)?;
-        
-        Ok(power_mode)
-    }
-    
-    #[allow(dead_code)]
-    pub fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
-        let current_power_mode: u8 = self.get_power_mode()?;
-        if power_mode != current_power_mode {
-            if power_mode == VL53L8CX_POWER_MODE_WAKEUP {
-                self.write_to_register(0x7fff, 0x00)?;
-                self.write_to_register(0x09, 0x04)?;
-                self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
-            } else if power_mode == VL53L8CX_POWER_MODE_SLEEP {
-                self.write_to_register(0x7fff, 0x00)?;
-                self.write_to_register(0x09, 0x02)?;
-                self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
-            } else {
-                return Err(Error::Other);
-            }
-        }
-        self.write_to_register(0x7fff, 0x02)?;
-        
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn get_external_sync_pin_enable(&mut self) -> Result<u8, Error<B::Error>> {
-        let is_sync_pin_enabled: u8;
-        self.dci_read_data(VL53L8CX_DCI_SYNC_PIN, 4)?;
-
-        /* Check bit 1 value (get sync pause bit) */
-        if self.temp_buffer[3] & 0x2 != 0 {
-            is_sync_pin_enabled = 1;
-        } else {
-            is_sync_pin_enabled = 0;
-        }
-        
-        Ok(is_sync_pin_enabled)
-    }
-
-    #[allow(dead_code)]
-    pub fn set_external_sync_pin_enable(&mut self, enable_sync_pin: u8) -> Result<(), Error<B::Error>> {
-        let mut tmp: [u32; 1] = [0];
-        self.read_from_register_to_temp_buffer(VL53L8CX_DCI_SYNC_PIN, 4)?;
-        from_u8_to_u32(&self.temp_buffer[3..3+4], &mut tmp);
-        
-        /* Update bit 1 with mask (set sync pause bit) */
-        if enable_sync_pin == 0 {
-            tmp[0] &= !(1 << 1);
-        } else {
-            tmp[0] |= 1 << 1;
-        }
-
-        self.temp_buffer[3] = tmp[0] as u8;
-        self.dci_write_data(VL53L8CX_DCI_SYNC_PIN, 4)?;
-
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
-        let target_order: u8;
-        self.dci_read_data(VL53L8CX_DCI_TARGET_ORDER, 4)?;
-        target_order = self.temp_buffer[0];
-
-        Ok(target_order)
-    }
-
-    #[allow(dead_code)]
-    pub fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
-        if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
-            self.dci_replace_data(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order], 1, 0x0)?;
-        } else {
-            return Err(Error::InvalidParam);
-        }
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn get_sharpener_percent(&mut self) -> Result<u8, Error<B::Error>> {
-        let sharpener_percent: u8;
-        self.dci_read_data(VL53L8CX_DCI_SHARPENER, 16)?;
-        sharpener_percent = self.temp_buffer[0xD] * 100 / 255;
-
-        Ok(sharpener_percent)
-    }
-
-    #[allow(dead_code)]
-    pub fn set_sharpener_percent(&mut self, sharpener_percent: u8) -> Result<(), Error<B::Error>> {
-        let sharpener: u8;
-        if sharpener_percent >= 100 {
-            return Err(Error::InvalidParam);
-        }
-        sharpener = sharpener_percent * 255 / 100;
-        self.dci_replace_data(VL53L8CX_DCI_SHARPENER, 16, &[sharpener], 1, 0xd)?;
-
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn get_integration_time(&mut self) -> Result<u32, Error<B::Error>> {
-        let mut time_ms: [u32; 1] = [0];
-        self.dci_read_data(VL53L8CX_DCI_INT_TIME, 20)?;
-        from_u8_to_u32(&self.temp_buffer[..4], &mut time_ms);
-        
-        time_ms[0] /= 1000;
-        
-        Ok(time_ms[0])
-    }
-
-    #[allow(dead_code)]
-    pub fn set_integration_time(&mut self, integration_time_ms: u32) -> Result<(), Error<B::Error>> {
-        let mut integration: u32 = integration_time_ms;
-
-        /* Integration time must be between 2ms and 1000ms */
-        if integration < 2 || integration > 1000 {
-            return Err(Error::InvalidParam);
-        }
-        integration *= 1000;
-        
-        let mut buf: [u8; 4] = [0; 4];
-        let tmp: [u32; 1] = [integration];
-        from_u32_to_u8(&tmp, &mut buf);
-        
-        self.dci_replace_data(VL53L8CX_DCI_INT_TIME, 20, &buf, 4, 0x00)?;
-
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn get_ranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
-        let ranging_mode: u8;
-        self.dci_read_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
-        if self.temp_buffer[1] == 1 {
-            ranging_mode = VL53L8CX_RANGING_MODE_CONTINUOUS;
-        } else {
-            ranging_mode = VL53L8CX_RANGING_MODE_AUTONOMOUS;
-        }
-        Ok(ranging_mode)
-    }
-
-    #[allow(dead_code)]
-    pub fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
-        let mut single_range: [u32; 1] = [0];
-        self.dci_read_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
-
-        if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
-            self.temp_buffer[1] = 1;
-            self.temp_buffer[3] = 3;
-            single_range[0] = 0;
-        } else if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
-            self.temp_buffer[1] = 3;
-            self.temp_buffer[3] = 2;
-            single_range[0] = 1;
-        } else {
-            return Err(Error::Other);
-        }
-
-        self.dci_write_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
-
-        from_u32_to_u8(&single_range, &mut self.temp_buffer[..4]);
-        self.dci_write_data(VL53L8CX_DCI_SINGLE_RANGE, 4)?;
-        
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn get_frequency_hz(&mut self) -> Result<u8, Error<B::Error>> {
-        self.dci_read_data(VL53L8CX_DCI_FREQ_HZ, 4)?;
-        let frequency_hz: u8 = self.temp_buffer[0x01];
-
-        Ok(frequency_hz)
-    }
-    
-    #[allow(dead_code)]
-    pub fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
-        let tmp: [u8; 1] = [frequency_hz];
-        self.dci_replace_data(VL53L8CX_DCI_FREQ_HZ, 4, &tmp, 1, 0x01)?;
-
-        Ok(())
-    }
 
 }

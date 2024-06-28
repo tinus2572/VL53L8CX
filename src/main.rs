@@ -42,14 +42,20 @@ use detection_thresholds::*;
 use xtalk::*;
 #[allow(unused_imports)]
 use driver::*;
+#[allow(unused_imports)]
+use utils::*;
+#[allow(unused_imports)]
+use accessors::*;
 
 mod buffers;
 mod consts;
 mod bus_operation;
+mod accessors;
 mod detection_thresholds;
 mod motion_indicator;
 mod xtalk;
 mod driver;
+mod utils;
 
 fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
@@ -156,7 +162,6 @@ fn main() -> ! {
         while !sensor.check_data_ready().unwrap() {} // Wait for data to be ready
         results = sensor.get_ranging_data().unwrap(); // Get and parse the result data
         write_results(&mut tx, &results, width); // Print the result to the output
-        // sensor.delay(100);
     }
 }
 

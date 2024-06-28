@@ -19,7 +19,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
             if self.temp_buffer[1] == expected_val {
                 return Ok(());
             }
-            self.read_from_register_to_temp_buffer(address, 4)?;
+            self.read_from_register(address, 4)?;
             self.delay(10);
 
             if self.temp_buffer[2] >= 0x7f {
@@ -187,7 +187,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         /* Wait for end of calibration */
         while timeout <= 400 {
-            self.read_from_register_to_temp_buffer(0, 4)?;
+            self.read_from_register(0, 4)?;
             if self.temp_buffer[0] != VL53L8CX_STATUS_ERROR {
                 /* Coverglass too good for Xtalk calibration */
                 if self.temp_buffer[2] >= 0x7f && self.temp_buffer[3] & 0x80 >> 7 == 1 {
@@ -204,7 +204,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.temp_buffer[..72].copy_from_slice(&VL53L8CX_GET_XTALK_CMD);
         self.write_multi_to_register_temp_buffer(0x2fb8, 72)?;
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
-        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_XTALK_BUFFER_SIZE+4)?;
+        self.read_from_register(VL53L8CX_UI_CMD_START, VL53L8CX_XTALK_BUFFER_SIZE+4)?;
         self.xtalk_data[..VL53L8CX_XTALK_BUFFER_SIZE-8].copy_from_slice(&self.temp_buffer[8..VL53L8CX_XTALK_BUFFER_SIZE]);
         self.xtalk_data[VL53L8CX_XTALK_BUFFER_SIZE-8..].copy_from_slice(&footer);
 
@@ -234,7 +234,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.temp_buffer[..72].copy_from_slice(&VL53L8CX_GET_XTALK_CMD);
         self.write_multi_to_register_temp_buffer(0x2fb8, 72)?;
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
-        self.read_from_register_to_temp_buffer(VL53L8CX_UI_CMD_START, VL53L8CX_XTALK_BUFFER_SIZE+4)?;
+        self.read_from_register(VL53L8CX_UI_CMD_START, VL53L8CX_XTALK_BUFFER_SIZE+4)?;
         xtalk_data[..VL53L8CX_XTALK_BUFFER_SIZE-8].copy_from_slice(&self.temp_buffer[8..VL53L8CX_XTALK_BUFFER_SIZE]);
         xtalk_data[VL53L8CX_XTALK_BUFFER_SIZE-8..].copy_from_slice(&footer);
 
