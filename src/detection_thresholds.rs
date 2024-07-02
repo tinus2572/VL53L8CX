@@ -16,7 +16,7 @@ pub struct DetectionThresholds {
 
 impl<B: BusOperation> Vl53l8cx<B> {
 #[allow(dead_code)]
-     fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
+    pub fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
         let enabled: u8;
         self.dci_read_data(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
         enabled = self.temp_buffer[0x1];
@@ -24,7 +24,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
     }
 
 #[allow(dead_code)]
-    fn set_detection_threshholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
+    pub fn set_detection_threshholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
         let mut grp_global_config: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
         let mut tmp: [u8; 1] = [0];
         if enabled == 1 {

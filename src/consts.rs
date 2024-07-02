@@ -1,6 +1,6 @@
 use embedded_hal::i2c::SevenBitAddress;
 
-
+#[allow(dead_code)]
 pub const VL53L8CX_DEFAULT_I2C_ADDRESS: SevenBitAddress = 0x52 >> 1;
 
 pub const VL53L8CX_RESOLUTION_4X4: u8 = 16;
@@ -134,7 +134,7 @@ pub const DEFAULT_I2C_BUFFER_LEN: usize = 32;
 
 
 #[allow(dead_code)]
-pub const VL53L8CX_NB_THRESHOLDS: u8 = 64;
+pub const VL53L8CX_NB_THRESHOLDS: usize = 64;
 
 #[allow(dead_code)]
 pub const VL53L8CX_DCI_DET_THRESH_CONFIG: u16 = 0x5488;

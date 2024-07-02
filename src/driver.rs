@@ -24,7 +24,6 @@ pub struct Vl53l8cx<B: BusOperation> {
     pub is_auto_stop_enabled: u8,
 
     pub lpn_pin: Pin<'B', 0, Output<PushPull>>,
-    pub i2c_rst_pin: i8,
     
     pub bus: B,
     pub delay: SysDelay

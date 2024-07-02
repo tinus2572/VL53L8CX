@@ -47,19 +47,15 @@ impl<P: I2c> BusOperation for Vl53l8cxI2C<P> {
 
 pub struct Vl53l8cxSPI<P> {
     spi: P,
-    #[allow(dead_code)]
-    cs_pin: Pin<'B', 6, Output<PushPull>>
 }
 
-// new for spi
 impl<P: SpiDevice> Vl53l8cxSPI<P> {
     #[allow(dead_code)]
-    pub fn new(spi: P, cs_pin: Pin<'B', 6, Output<PushPull>>) -> Self {
-        Self { spi, cs_pin }
+    pub fn new(spi: P) -> Self {
+        Self { spi }
     }
 }
 
-// read, write, write_read for spi
 impl<P: SpiDevice> BusOperation for Vl53l8cxSPI<P> {
 
     type Error = P::Error;
@@ -90,7 +86,8 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
     where
     P: I2c,
 {
-    pub fn new_i2c(i2c: P, address: SevenBitAddress, lpn_pin: Pin<'B', 0, Output<PushPull>>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
+    #[allow(dead_code)]
+    pub fn new_i2c(i2c: P, address: SevenBitAddress, lpn_pin: Pin<'B', 0, Output<PushPull>>, delay: SysDelay) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
         let is_auto_stop_enabled: u8 = 0;
@@ -106,13 +103,13 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
             data_read_size,
             is_auto_stop_enabled,
             lpn_pin,
-            i2c_rst_pin,
             bus,
             delay
         };
         Ok(instance)
     }
-
+    
+    #[allow(dead_code)]
     pub fn set_i2c_address(&mut self, i2c_address: SevenBitAddress) -> Result<(), Error<P::Error>> {
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x4, i2c_address)?;
@@ -122,6 +119,7 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn init_sensor(&mut self, address: u8) -> Result<(), Error<P::Error>>{
         self.off()?;
         self.on()?;
@@ -132,18 +130,17 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
         self.init()?;
         Ok(())
     }
-
 }
 
 impl<P> Vl53l8cx<Vl53l8cxSPI<P>> 
     where P: SpiDevice,
 {
     #[allow(dead_code)]
-    pub fn new_spi(spi: P, cs_pin: Pin<'B', 6, Output<PushPull>>, lpn_pin: Pin<'B', 0, Output<PushPull>>, i2c_rst_pin: i8, delay: SysDelay) -> Result<Self, Error<P::Error>> {
+    pub fn new_spi(spi: P, lpn_pin: Pin<'B', 0, Output<PushPull>>, delay: SysDelay) -> Result<Self, Error<P::Error>> {
         let streamcount: u8 = 0;
         let data_read_size: u32 = 0;
         let is_auto_stop_enabled: u8 = 0;
-        let bus: Vl53l8cxSPI<P> = Vl53l8cxSPI::new(spi, cs_pin);
+        let bus: Vl53l8cxSPI<P> = Vl53l8cxSPI::new(spi);
         let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
         let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
         let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
@@ -155,7 +152,6 @@ impl<P> Vl53l8cx<Vl53l8cxSPI<P>>
             data_read_size,
             is_auto_stop_enabled,
             lpn_pin,
-            i2c_rst_pin,
             bus,
             delay
         };
