@@ -110,7 +110,7 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
 const I2C: bool = true;
 const SPI: bool = false;
-const BUS: bool = I2C;
+const BUS: bool = SPI;
 const ENABLE_THRESHOLD: bool = true;
 
 #[entry]
@@ -145,14 +145,15 @@ fn main() -> ! {
 if BUS == SPI {
         
     use stm32f4xx_hal::spi::{Spi, Polarity, Phase, Mode};
-    use embedded_hal_bus::spi::RefCellDevice;
+    use stm32f4xx_hal::pac::SPI1;
+    use embedded_hal_bus::spi::{NoDelay, RefCellDevice};
 
-    let sclk = gpiob.pb3.into_alternate();
-    let miso = gpiob.pb4.into_alternate();
-    let mosi = gpiob.pb5.into_alternate();
+    let sclk: Pin<'B', 3, Alternate<5>> = gpiob.pb3.into_alternate();
+    let miso: Pin<'B', 4, Alternate<5>> = gpiob.pb4.into_alternate();
+    let mosi: Pin<'B', 5, Alternate<5>> = gpiob.pb5.into_alternate();
     let cs_pin: Pin<'B', 6, Output> = gpiob.pb6.into_push_pull_output();
 
-    let spi = Spi::new(
+    let spi: Spi<SPI1> = Spi::new(
         dp.SPI1,
         (sclk, miso, mosi),
         Mode{
@@ -162,10 +163,10 @@ if BUS == SPI {
         3.MHz(),
         &clocks,);
         
-    let spi = RefCell::new(spi);
-    let spi = RefCellDevice::new_no_delay(&spi, cs_pin).unwrap();
+    let spi: RefCell<Spi<SPI1>> = RefCell::new(spi);
+    let spi: RefCellDevice<Spi<SPI1>, Pin<'B', 6, Output>, NoDelay> = RefCellDevice::new_no_delay(&spi, cs_pin).unwrap();
     
-    let mut sensor = Vl53l8cx::new_spi(
+    let mut sensor: Vl53l8cx<Vl53l8cxSPI<RefCellDevice<Spi<SPI1>, Pin<'B', 6, Output>, NoDelay>>> = Vl53l8cx::new_spi(
         spi, 
         lpn_pin,
         delay

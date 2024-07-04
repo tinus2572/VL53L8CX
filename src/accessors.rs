@@ -160,10 +160,41 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(())
     }
-/**
- * @brief This function gets the current target order (closest or strongest).
- * @return (u8) target_order: Contains the target order.
- */
+    
+    /**
+     * @brief This function is used to get the number of frames between 2 temperature
+     * compensation.
+     * @param (u32) repeat_count : Number of frames before next temperature
+     * compensation. Set to 0 to disable the feature (default configuration).
+     */
+    #[allow(dead_code)]
+    pub fn get_vhv_repeat_count(&mut self) -> Result<u32, Error<B::Error>> {
+        self.dci_read_data(VL53L8CX_DCI_VHV_CONFIG, 16)?;
+        let mut repeat_count: [u32; 1] = [0];
+        from_u8_to_u32(&self.temp_buffer[4..8], &mut repeat_count);
+        Ok(repeat_count[0])
+    }
+    
+    /**
+     * @brief This function is used to set a periodic temperature compensation. By
+     * setting a repeat count different to 0 the firmware automatically runs a
+     * temperature calibration every N frames.
+     * default the repeat count is set to 0
+     * @param (u32) repeat_count : Number of frames between temperature
+     * compensation. Set to 0 to disable the feature (default configuration).
+     */ 
+    #[allow(dead_code)]
+    pub fn set_vhv_repeat_count(&mut self, repeat_count: u32) -> Result<(), Error<B::Error>> {
+        let mut tmp: [u8;4] = [0;4];
+        from_u32_to_u8(&[repeat_count], &mut tmp);
+        self.dci_replace_data(VL53L8CX_DCI_VHV_CONFIG, 16, &tmp, 4, 0x4)?;
+        Ok(())
+    }
+    
+    /**
+     * @brief This function gets the current target order (closest or strongest).
+     * @return (u8) target_order: Contains the target order.
+     */
     #[allow(dead_code)]
     pub fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
         let target_order: u8;
@@ -173,13 +204,13 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(target_order)
     }
 
-/**
- * @brief This function sets a new target order. Please use macros
- * VL53L8CX_TARGET_ORDER_STRONGEST and VL53L8CX_TARGET_ORDER_CLOSEST to define
- * the new output order. By default, the sensor is configured with the strongest
- * output.
- * @param (u8) target_order : Required target order.
- */
+    /**
+     * @brief This function sets a new target order. Please use macros
+     * VL53L8CX_TARGET_ORDER_STRONGEST and VL53L8CX_TARGET_ORDER_CLOSEST to define
+     * the new output order. By default, the sensor is configured with the strongest
+     * output.
+     * @param (u8) target_order : Required target order.
+     */
     #[allow(dead_code)]
     pub fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
         if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
