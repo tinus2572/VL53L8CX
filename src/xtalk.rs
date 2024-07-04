@@ -1,29 +1,23 @@
 
 use consts::*;
 use buffers::*;
+use utils::*;
 
-use crate::{consts, buffers, BusOperation, Vl53l8cx, Error, bitfield};
-
-bitfield! {
-    struct BlockHeader(u32);
-    bh_idx, set_bh_idx: 16, 12;
-    bh_size, set_bh_size: 12, 4;
-    bh_type, set_bh_type: 4, 0;
-}
+use crate::{buffers, consts, utils, BlockHeader, BusOperation, Error, Vl53l8cx};
 
 impl<B: BusOperation> Vl53l8cx<B> {
     #[allow(dead_code)]
     fn poll_for_answer_xtalk(&mut self, address: u16, expected_val: u8) -> Result<(), Error<B::Error>> {
-        let mut timeout: u32 = 0;
+        let mut timeout: u8 = 0;
         while timeout <= 200 {
             if self.temp_buffer[1] == expected_val {
                 return Ok(());
             }
             self.read_from_register(address, 4)?;
-            self.delay(10);
+            self.delay(10); 
 
             if self.temp_buffer[2] >= 0x7f {
-                return Err(Error::Other);
+                return Err(Error::Mcu);
             } 
             timeout += 1; 
         }
@@ -37,7 +31,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut bh: BlockHeader;
         self.data_read_size = 0;
         /* Enable mandatory output (meta and common data) */
-        let mut output_bh_enable: [u32; 4] = [
+        let output_bh_enable: [u32; 4] = [
             0x0001FFFF,
             0x00000000,
             0x00000000,
@@ -81,60 +75,42 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 self.data_read_size += bh.bh_size();
             }
             self.data_read_size += 4;
+            output[i] = bh.bh_bytes();
         }
         self.data_read_size += 24;
 
-        let mut buf: [u8; 68] = [0; 68];
-        for (i, &num) in output.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
-        self.temp_buffer[..buf.len()].copy_from_slice(&buf);
+        from_u32_to_u8(&output, &mut self.temp_buffer[..68]);
         self.dci_write_data(VL53L8CX_DCI_OUTPUT_LIST, 68)?;
-        for (i, chunk) in buf.chunks(4).enumerate() {
-            output[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
 
         header_config[0] = self.data_read_size;
         header_config[1] = 17;
 
-        
-        let mut buf: [u8; 8] = [0; 8];
-        for (i, &num) in header_config.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
-        self.temp_buffer[..buf.len()].copy_from_slice(&buf);
+        from_u32_to_u8(&header_config, &mut self.temp_buffer[..8]);
         self.dci_write_data(VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
-        for (i, chunk) in buf.chunks(4).enumerate() {
-            header_config[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
-        let mut buf: [u8; 16] = [0; 16];
-        for (i, &num) in output_bh_enable.iter().enumerate() {
-            buf[i*4..i*4 + 4].copy_from_slice(&num.to_ne_bytes()); 
-        }
-        self.temp_buffer[..buf.len()].copy_from_slice(&buf);
+
+        from_u32_to_u8(&output_bh_enable, &mut self.temp_buffer[..16]);
         self.dci_write_data(VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
-        for (i, chunk) in buf.chunks(4).enumerate() {
-            output_bh_enable[i] = (chunk[0] as u32) << 24 | (chunk[1] as u32) << 16 | (chunk[2] as u32) << 8 | (chunk[3] as u32);
-        }
-                
+       
         Ok(())
     }
 
     #[allow(dead_code)]
     fn get_xtalk_margin(&mut self) -> Result<u32, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_XTALK_CFG, 16)?;
-        let mut xtalk_margin: u32 = (self.temp_buffer[0] as u32) << 24 | (self.temp_buffer[1] as u32) << 16 | (self.temp_buffer[2] as u32) << 8 | self.temp_buffer[3] as u32;
-        xtalk_margin /= 2048;
-        Ok(xtalk_margin)
+        let mut xtalk_margin: [u32; 1] = [0];
+        from_u8_to_u32(&self.temp_buffer[..4], &mut xtalk_margin);
+        xtalk_margin[0] /= 2048;
+
+        Ok(xtalk_margin[0])
     }
     
     #[allow(dead_code)]
     fn set_xtalk_margin(&mut self, xtalk_margin: u32) -> Result<(), Error<B::Error>> {
-        let mut margin_kcps: [u8; 4] = [0; 4];
-        margin_kcps.copy_from_slice(&(xtalk_margin<<11).to_ne_bytes());
         if xtalk_margin > 10000 {
-            return Err(Error::Other);
+            return Err(Error::InvalidParam);
         }
+        let mut margin_kcps: [u8; 4] = [0; 4];
+        from_u32_to_u8(&[xtalk_margin*2048], &mut margin_kcps);
         self.dci_replace_data(VL53L8CX_DCI_XTALK_CFG, 16, &margin_kcps, 4, 0)?;
 
         Ok(())
@@ -145,9 +121,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut timeout: u16 = 0;
         let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
-        let mut reflectance = reflectance_percent;
-        let mut distance = distance_mm;
-        let samples = nb_samples;
+        let mut reflectance: [u8; 2] = [0,0];
+        let mut distance: [u8;2] = [0,0];
+        let samples: [u8;1] = [nb_samples];
+        
+        /* Get initial configuration */
         let resolution = self.get_resolution()?;
         let frequency = self.get_frequency_hz()?;
         let sharpener_percent = self.get_sharpener_percent()?;
@@ -157,10 +135,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let ranging_mode = self.get_ranging_mode()?;
 
         /* Check input arguments validity */
-        if reflectance < 1 || reflectance > 99
-            || distance < 600 || distance > 3000
-            || samples < 1 || samples > 16 {
-            return Err(Error::Other);
+        if reflectance_percent < 1 || reflectance_percent > 99
+            || distance_mm < 600 || distance_mm > 3000
+            || nb_samples < 1 || nb_samples > 16 {
+            return Err(Error::InvalidParam);
         }
         self.set_resolution(VL53L8CX_RESOLUTION_8X8)?;
 
@@ -170,13 +148,13 @@ impl<B: BusOperation> Vl53l8cx<B> {
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
 
         /* Format input argument */
-        reflectance *= 16;
-        distance *= 4;
+        from_u16_to_u8(&[reflectance_percent*16], &mut reflectance);
+        from_u16_to_u8(&[distance_mm*4], &mut distance);
 
         /* Update required fields */
-        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &distance.to_ne_bytes(), 2, 0)?;
-        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &reflectance.to_ne_bytes(), 2, 2)?;
-        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &[samples], 1, 4)?;
+        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &distance, 2, 0)?;
+        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &reflectance, 2, 2)?;
+        self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &samples, 1, 4)?;
 
         /* Program output for Xtalk calibration */
         self.program_output_config()?;

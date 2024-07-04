@@ -1,17 +1,60 @@
 
 use consts::*;
+use utils::*;
 
-use crate::{consts, BusOperation, Vl53l8cx, Error};
+use crate::{consts, utils, BusOperation, Vl53l8cx, Error};
 
 #[repr(C)]
 #[allow(dead_code)]
+#[derive(Clone, Copy)]
 pub struct DetectionThresholds {
-    param_low_thresh: i32,
-    param_high_thresh: i32,
-    measurement: u8,
-    th_type: u8,
-    zone_num: u8,
-    math_op: u8
+    pub param_low_thresh: i32,
+    pub param_high_thresh: i32,
+    pub measurement: u8,
+    pub th_type: u8,
+    pub zone_num: u8,
+    pub math_op: u8
+}
+
+impl DetectionThresholds {
+    pub fn new() -> Self {
+        let param_low_thresh: i32 = 0;
+        let param_high_thresh: i32 = 0;
+        let measurement: u8 = VL53L8CX_DISTANCE_MM;
+        let th_type: u8 = VL53L8CX_IN_WINDOW;
+        let zone_num: u8 = 0;
+        let math_op: u8 = VL53L8CX_OPERATION_NONE;
+        Self { param_low_thresh,
+            param_high_thresh,
+            measurement,
+            th_type,
+            zone_num,
+            math_op }
+    }
+}
+
+fn from_u8_to_thresholds(src: &[u8], dst: &mut [DetectionThresholds]) {
+    for i in 0..dst.len() {
+        let j: usize = 12 * i;
+        from_u8_to_i32(&src[j..j+4], &mut [dst[i].param_low_thresh]);
+        from_u8_to_i32(&src[j+4..j+8], &mut [dst[i].param_high_thresh]);
+        dst[i].measurement = src[j+8];
+        dst[i].th_type = src[j+9];
+        dst[i].zone_num = src[j+10];
+        dst[i].math_op = src[j+11];
+    }
+}
+
+fn from_thresholds_to_u8(src: &[DetectionThresholds], dst: &mut [u8]) {
+    for i in 0..src.len() {
+        let j: usize = 12 * i;
+        from_i32_to_u8(&[src[i].param_low_thresh], &mut dst[j..j+4]);
+        from_i32_to_u8(&[src[i].param_high_thresh], &mut dst[j+4..j+8]);
+        dst[j+8] = src[i].measurement;
+        dst[j+9] = src[i].th_type;
+        dst[j+10] = src[i].zone_num;
+        dst[j+11] = src[i].math_op;
+    }
 }
 
 impl<B: BusOperation> Vl53l8cx<B> {
@@ -34,37 +77,25 @@ impl<B: BusOperation> Vl53l8cx<B> {
             grp_global_config[0x01] = 0x00;
             tmp[0] = 0x0C;
         }
+        
         /* Set global interrupt config */
         self.dci_replace_data(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8, &grp_global_config, 4, 0x00)?;
+        
         /* Update interrupt config */
         self.dci_replace_data(VL53L8CX_DCI_DET_THRESH_CONFIG, 20, &tmp, 1, 0x11)?;
+        
         Ok(())
     }
 
-#[allow(dead_code)]
-    fn get_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
-        let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
-        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-            arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
-            arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
-            arr[i+8] = thresholds[i].measurement;
-            arr[i+9] = thresholds[i].th_type;
-            arr[i+10] = thresholds[i].zone_num;
-            arr[i+11] = thresholds[i].math_op;
-        }
-        self.temp_buffer[..arr.len()].copy_from_slice(&arr);
-        self.dci_read_data(VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
+    #[allow(dead_code)]
+    pub fn get_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] ) -> Result<(), Error<B::Error>> {
+  
+        /* Get thresholds configuration */
+        from_thresholds_to_u8(thresholds, &mut self.temp_buffer[..VL53L8CX_NB_THRESHOLDS * 12]);
+        self.dci_read_data(VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS * 12)?;
+        from_u8_to_thresholds(&self.temp_buffer[..VL53L8CX_NB_THRESHOLDS * 12], thresholds);
         
-        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-            thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
-            thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
-            thresholds[i].measurement = arr[i+8];
-            thresholds[i].th_type = arr[i+9];
-            thresholds[i].zone_num = arr[i+10];
-            thresholds[i].math_op = arr[i+11];
-        }
-        
-        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+        for i in 0..VL53L8CX_NB_THRESHOLDS {
             if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
                 thresholds[i].param_low_thresh  /= 4;
                 thresholds[i].param_high_thresh /= 4;
@@ -88,10 +119,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
-#[allow(dead_code)]
-    fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS as usize] ) -> Result<(), Error<B::Error>> {
-        let grp_valid_target_cfg: [u8; 8] = [0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05];
-        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
+    #[allow(dead_code)]
+    pub fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] ) -> Result<(), Error<B::Error>> {
+        for i in 0..VL53L8CX_NB_THRESHOLDS {
             if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
                 thresholds[i].param_low_thresh  *= 4;
                 thresholds[i].param_high_thresh *= 4;
@@ -112,44 +142,27 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 thresholds[i].param_high_thresh *= 65535;
             }
         } 
-        self.temp_buffer[..8].copy_from_slice(&grp_valid_target_cfg);
+
+        /* Set valid target list */
+        self.temp_buffer[..8].copy_from_slice(&[0x05; 8]);
         self.dci_write_data(VL53L8CX_DCI_DET_THRESH_VALID_STATUS, 8)?;
         
-        
-        let mut arr: [u8; VL53L8CX_NB_THRESHOLDS as usize * 12] = [0; VL53L8CX_NB_THRESHOLDS as usize * 12];
-        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-            arr[i..i+4].copy_from_slice(&thresholds[i].param_low_thresh.to_ne_bytes());
-            arr[i+4..i+8].copy_from_slice(&thresholds[i].param_high_thresh.to_ne_bytes());
-            arr[i+8] = thresholds[i].measurement;
-            arr[i+9] = thresholds[i].th_type;
-            arr[i+10] = thresholds[i].zone_num;
-            arr[i+11] = thresholds[i].math_op;
-        }
-
-        self.temp_buffer[..arr.len()].copy_from_slice(&arr);
-        self.dci_write_data(VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS as usize * 12)?;
-        
-        for i in 0..VL53L8CX_NB_THRESHOLDS as usize {
-            thresholds[i].param_low_thresh = (arr[i] as i32) << 24 | (arr[i+1] as i32) << 16 | (arr[i+2] as i32) << 8 | (arr[i+3] as i32);
-            thresholds[i].param_high_thresh = (arr[i+4] as i32) << 24 | (arr[i+5] as i32) << 16 | (arr[i+6] as i32) << 8 | (arr[i+7] as i32);
-            thresholds[i].measurement = arr[i+8];
-            thresholds[i].th_type = arr[i+9];
-            thresholds[i].zone_num = arr[i+10];
-            thresholds[i].math_op = arr[i+11];
-        }
+        /* Set thresholds configuration */
+        from_thresholds_to_u8(thresholds, &mut self.temp_buffer[..VL53L8CX_NB_THRESHOLDS * 12]);
+        self.dci_write_data(VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS * 12)?;
 
         Ok(())
     }
 
-#[allow(dead_code)]
-    fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
+    #[allow(dead_code)]
+    pub fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
         let auto_stop: u8 = self.temp_buffer[0x03];
         Ok(auto_stop)
     }
 
-#[allow(dead_code)]
-    fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
+    #[allow(dead_code)]
+    pub fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
         let tmp: [u8; 1] = [auto_stop];
         self.dci_replace_data(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
         Ok(auto_stop)

@@ -78,25 +78,31 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
     for j in 0..width {
         for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
         
-        for i in 0..width {
-            write!(
-                tx, 
-                "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<2}\x1b[0m", 
+        #[cfg(not(any(feature="VL53L8CX_DISABLE_DISTANCE_MM", feature="VL53L8CX_DISABLE_TARGET_STATUS")))]
+        {
+            for i in 0..width {
+                write!(
+                    tx, 
+                    "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<2}\x1b[0m", 
                 dis=results.distance_mm[width*j+i], 
                 sta=results.target_status[width*j+i]
-            ).unwrap();
-        } write!(tx, "|\n").unwrap();
+                ).unwrap();
+            } write!(tx, "|\n").unwrap();
+        }
 
-        for i in 0..width {
-            let mut sig: u32 = results.signal_per_spad[width*j+i];
-            if sig > 9999 { sig = 9999; }
-            write!(
-                tx, 
-                "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<2}\x1b[0m", 
-                sig=sig, 
-                amb=results.ambient_per_spad[width*j+i]
-            ).unwrap();
-        } write!(tx, "|\n").unwrap();
+        #[cfg(not(any(feature="VL53L8CX_DISABLE_SIGNAL_PER_SPAD", feature="VL53L8CX_DISABLE_AMBIENT_PER_SPAD")))]
+        {
+            for i in 0..width {
+                let mut sig: u32 = results.signal_per_spad[width*j+i];
+                if sig > 9999 { sig = 9999; }
+                write!(
+                    tx, 
+                    "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<2}\x1b[0m", 
+                    sig=sig, 
+                    amb=results.ambient_per_spad[width*j+i]
+                ).unwrap();
+            } write!(tx, "|\n").unwrap();
+        }
     }
     for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
 
@@ -105,7 +111,7 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 const I2C: bool = true;
 const SPI: bool = false;
 const BUS: bool = I2C;
-// const ENABLE_THRESHOLD: bool = false;
+const ENABLE_THRESHOLD: bool = true;
 
 #[entry]
 fn main() -> ! {
@@ -204,11 +210,20 @@ if BUS == SPI {
         ).unwrap();
         
     sensor.init_sensor(address).unwrap(); 
-// if ENABLE_THRESHOLD == true {   
-//     let mut thresholds: [DetectionThresholds; VL53L8CX_NB_THRESHOLDS];
-//     sensor.set_detection_threshholds_enable(0).unwrap(); // Disable thresholds detection
 
-// }
+if ENABLE_THRESHOLD == true {   
+    let mut thresholds: [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] = [DetectionThresholds::new(); VL53L8CX_NB_THRESHOLDS];
+    for i in 0..resolution as usize {
+        thresholds[i].zone_num = i as u8;
+        thresholds[i].param_low_thresh = 200;
+        thresholds[i].param_high_thresh = 600;
+    }
+    // thresholds[resolution as usize].zone_num |= VL53L8CX_LAST_THRESHOLD;
+    sensor.set_detection_threshholds_enable(0).unwrap(); // Disable thresholds detection
+    sensor.set_detection_threshholds(&mut thresholds).unwrap();
+    sensor.set_detection_threshholds_enable(1).unwrap();
+}
+
     sensor.set_resolution(resolution).unwrap();
     sensor.start_ranging().unwrap();
 

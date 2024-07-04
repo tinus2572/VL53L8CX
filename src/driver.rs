@@ -5,14 +5,14 @@ use utils::*;
 
 use stm32f4xx_hal::prelude::*;
 
-use crate::{consts, buffers, utils, BusOperation, bitfield, MotionIndicator, SysDelay, Output, PushPull, Pin};
+use crate::{bitfield, buffers, consts, from_u8_to_motion_indicator, utils, BusOperation, MotionIndicator, Output, Pin, PushPull, SysDelay};
 
 bitfield! {
-    struct BlockHeader(u32);
-    bh_bytes, _: 31, 0;
-    bh_idx, set_bh_idx: 31, 16;
-    bh_size, set_bh_size: 15, 4;
-    bh_type, set_bh_type: 3, 0;
+    pub struct BlockHeader(u32);
+    pub bh_bytes, _: 31, 0;
+    pub bh_idx, set_bh_idx: 31, 16;
+    pub bh_size, set_bh_size: 15, 4;
+    pub bh_type, set_bh_type: 3, 0;
 }
 
 pub struct Vl53l8cx<B: BusOperation> {
@@ -42,31 +42,50 @@ pub enum Error<B> {
 
 #[repr(C)]
 pub struct ResultsData {
-    pub silicon_temp_degc: i8,
+    pub silicon_temp_degc: i8, 
+    #[cfg(not(feature="VL53L8CX_DISABLE_AMBIENT_PER_SPAD"))]
     pub ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
+    #[cfg(not(feature="VL53L8CX_DISABLE_NB_TARGET_DETECTED"))]
     pub nb_target_detected: [u8; VL53L8CX_RESOLUTION_8X8 as usize],
+    #[cfg(not(feature="VL53L8CX_DISABLE_NB_SPADS_ENABLED"))]
     pub nb_spads_enabled: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
+    #[cfg(not(feature="VL53L8CX_DISABLE_SIGNAL_PER_SPAD"))]
     pub signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    #[cfg(not(feature="VL53L8CX_DISABLE_RANGE_SIGMA_MM"))]
     pub range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    #[cfg(not(feature="VL53L8CX_DISABLE_DISTANCE_MM"))]
     pub distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    #[cfg(not(feature="VL53L8CX_DISABLE_REFLECTANCE_PERCENT"))]
     pub reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    #[cfg(not(feature="VL53L8CX_DISABLE_TARGET_STATUS"))]
     pub target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+    #[cfg(not(feature="VL53L8CX_DISABLE_MOTION_INDICATOR"))]
     pub motion_indicator: MotionIndicator
 } 
 
 impl ResultsData {
     pub fn new() -> Self {
-        let silicon_temp_degc: i8 = 0;
-        let ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
-        let nb_target_detected:[u8; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
-        let nb_spads_enabled:[u32; VL53L8CX_RESOLUTION_8X8 as usize] = [0; VL53L8CX_RESOLUTION_8X8 as usize];
-        let signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
-        let range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
-        let distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
-        let reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
-        let target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)] = [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)];
-        let motion_indicator: MotionIndicator = MotionIndicator::new();
-        Self { silicon_temp_degc, ambient_per_spad, nb_spads_enabled, nb_target_detected, signal_per_spad, range_sigma_mm, distance_mm, reflectance, target_status, motion_indicator }
+        ResultsData {
+            silicon_temp_degc: 0, 
+            #[cfg(not(feature="VL53L8CX_DISABLE_AMBIENT_PER_SPAD"))]
+            ambient_per_spad: [0; VL53L8CX_RESOLUTION_8X8 as usize],
+            #[cfg(not(feature="VL53L8CX_DISABLE_NB_TARGET_DETECTED"))]
+            nb_target_detected: [0; VL53L8CX_RESOLUTION_8X8 as usize],
+            #[cfg(not(feature="VL53L8CX_DISABLE_NB_SPADS_ENABLED"))]
+            nb_spads_enabled: [0; VL53L8CX_RESOLUTION_8X8 as usize],
+            #[cfg(not(feature="VL53L8CX_DISABLE_SIGNAL_PER_SPAD"))]
+            signal_per_spad: [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+            #[cfg(not(feature="VL53L8CX_DISABLE_RANGE_SIGMA_MM"))]
+            range_sigma_mm: [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+            #[cfg(not(feature="VL53L8CX_DISABLE_DISTANCE_MM"))]
+            distance_mm: [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+            #[cfg(not(feature="VL53L8CX_DISABLE_REFLECTANCE_PERCENT"))]
+            reflectance: [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+            #[cfg(not(feature="VL53L8CX_DISABLE_TARGET_STATUS"))]
+            target_status: [0; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
+            #[cfg(not(feature="VL53L8CX_DISABLE_MOTION_INDICATOR"))]
+            motion_indicator: MotionIndicator::new()
+        }
     }
 }
 
@@ -512,20 +531,18 @@ impl<B: BusOperation> Vl53l8cx<B> {
             VL53L8CX_MOTION_DETECT_BH
         ];
 
-        output_bh_enable[0] += 
-            (1-VL53L8CX_DISABLE_AMBIENT_PER_SPAD) * 8
-            + (1-VL53L8CX_DISABLE_NB_SPADS_ENABLED) * 16
-            + (1-VL53L8CX_DISABLE_NB_TARGET_DETECTED) * 32
-            + (1-VL53L8CX_DISABLE_SIGNAL_PER_SPAD) * 64
-            + (1-VL53L8CX_DISABLE_RANGE_SIGMA_MM) * 128
-            + (1-VL53L8CX_DISABLE_DISTANCE_MM) * 256
-            + (1-VL53L8CX_DISABLE_REFLECTANCE_PERCENT) * 512
-            + (1-VL53L8CX_DISABLE_TARGET_STATUS) * 1024
-            + (1-VL53L8CX_DISABLE_MOTION_INDICATOR) * 2048;
-
+        if !cfg!(feature = "VL53L8CX_DISABLE_AMBIENT_PER_SPAD") { output_bh_enable[0] += 8; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_NB_SPADS_ENABLED") { output_bh_enable[0] += 16; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_NB_TARGET_DETECTED") { output_bh_enable[0] += 32; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_SIGNAL_PER_SPAD") { output_bh_enable[0] += 64; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_RANGE_SIGMA_MM") { output_bh_enable[0] += 128; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_DISTANCE_MM") { output_bh_enable[0] += 256; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_REFLECTANCE_PERCENT") { output_bh_enable[0] += 512; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_TARGET_STATUS") { output_bh_enable[0] += 1024; }
+        if !cfg!(feature = "VL53L8CX_DISABLE_MOTION_INDICATOR") { output_bh_enable[0] += 2048; }
+        
         /* Update data size */
         for i in 0..12 {
-            // if output[i] == 0 || output_bh_enable[0] & 1 << i == 0 {
             if output[i] == 0 || output_bh_enable[i/32] & (1 << (i%32)) == 0 {
                 continue;
             }
@@ -548,6 +565,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         
         header_config[0] = self.data_read_size;
         header_config[1] = 12+1 as u32;
+        
         from_u32_to_u8(&header_config, &mut self.temp_buffer[..8]);
         self.dci_write_data(VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
 
@@ -651,6 +669,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         let mut header_id: u16;
         let mut footer_id: u16;
         let mut bh: BlockHeader;
+
         self.read_from_register(0, self.data_read_size as usize)?;
         self.streamcount = self.temp_buffer[0];
         swap_buffer(&mut self.temp_buffer, self.data_read_size as usize);
@@ -669,74 +688,103 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 msize = bh.bh_size() as usize;
             }
 
-            let mut src: &[u8] = &[0];
-            if i+4+msize <= VL53L8CX_TEMPORARY_BUFFER_SIZE {
-                src = &self.temp_buffer[i+4..i+4 + msize];
-            }
-            
+            i += 4;
+
             if bh.bh_idx() == VL53L8CX_METADATA_IDX as u32 {
-                result.silicon_temp_degc = self.temp_buffer[i+12] as i8;
+                result.silicon_temp_degc = self.temp_buffer[i+8] as i8;
+                i += msize; 
+                continue;
             } 
             
-            if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_AMBIENT_RATE_IDX as u32 {
-                from_u8_to_u32(src, &mut result.ambient_per_spad);
-            
-            } else if VL53L8CX_DISABLE_NB_SPADS_ENABLED == 0 && bh.bh_idx() == VL53L8CX_SPAD_COUNT_IDX as u32 {
-                from_u8_to_u32(src, &mut result.nb_spads_enabled);
-
-            } else if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 && bh.bh_idx() == VL53L8CX_NB_TARGET_DETECTED_IDX as u32 {
-                result.nb_target_detected[..msize].copy_from_slice(src); 
-                
-            } else if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 && bh.bh_idx() == VL53L8CX_SIGNAL_RATE_IDX as u32 {
-                from_u8_to_u32(src, &mut result.signal_per_spad);
-                
-            } else if VL53L8CX_DISABLE_RANGE_SIGMA_MM == 0 && bh.bh_idx() == VL53L8CX_RANGE_SIGMA_MM_IDX as u32 {
-                from_u8_to_u16(src, &mut result.range_sigma_mm);
-                
-            } else if VL53L8CX_DISABLE_DISTANCE_MM == 0 && bh.bh_idx() == VL53L8CX_DISTANCE_IDX as u32 {
-                from_u8_to_i16(src, &mut result.distance_mm);
-            } else if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 && bh.bh_idx() == VL53L8CX_REFLECTANCE_EST_PC_IDX as u32 {
-                result.reflectance[..msize].copy_from_slice(src); 
-
-            } else if VL53L8CX_DISABLE_TARGET_STATUS == 0 && bh.bh_idx() == VL53L8CX_TARGET_STATUS_IDX as u32 {
-                result.target_status[..msize].copy_from_slice(src); 
-
-            } else if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 && bh.bh_idx() == VL53L8CX_MOTION_DETEC_IDX as u32 {
-                let ptr: *const MotionIndicator = src.as_ptr() as *const MotionIndicator;
-                result.motion_indicator = unsafe { ptr.read() };
+            let mut src: &[u8] = &[0];
+            if i+msize <= VL53L8CX_TEMPORARY_BUFFER_SIZE {
+                src = &self.temp_buffer[i..i+msize];
             }
-            i += 4 + msize;
+
+            i += msize;
+            
+            #[cfg(not(feature = "VL53L8CX_DISABLE_AMBIENT_PER_SPAD"))] 
+            if bh.bh_idx() == VL53L8CX_AMBIENT_RATE_IDX as u32 {
+                from_u8_to_u32(src, &mut result.ambient_per_spad);
+                continue;
+            }
+
+            #[cfg(not(feature = "VL53L8CX_DISABLE_NB_SPADS_ENABLED"))] 
+            if bh.bh_idx() == VL53L8CX_SPAD_COUNT_IDX as u32 {
+                from_u8_to_u32(src, &mut result.nb_spads_enabled);
+                continue;
+            }
+
+            #[cfg(not(feature = "VL53L8CX_DISABLE_NB_TARGET_DETECTED"))] 
+            if bh.bh_idx() == VL53L8CX_NB_TARGET_DETECTED_IDX as u32 {
+                result.nb_target_detected[..msize].copy_from_slice(src); 
+                continue;
+            }
+
+            #[cfg(not(feature = "VL53L8CX_DISABLE_SIGNAL_PER_SPAD"))]
+            if bh.bh_idx() == VL53L8CX_SIGNAL_RATE_IDX as u32 {
+                from_u8_to_u32(src, &mut result.signal_per_spad);
+                continue;
+            }
+
+            #[cfg(not(feature = "VL53L8CX_DISABLE_RANGE_SIGMA_MM"))]
+            if bh.bh_idx() == VL53L8CX_RANGE_SIGMA_MM_IDX as u32 {
+                from_u8_to_u16(src, &mut result.range_sigma_mm);   
+                continue;
+            } 
+
+            #[cfg(not(feature = "VL53L8CX_DISABLE_DISTANCE_MM"))] 
+            if bh.bh_idx() == VL53L8CX_DISTANCE_IDX as u32 {
+                from_u8_to_i16(src, &mut result.distance_mm);
+                continue;
+            }
+
+            #[cfg(not(feature= "VL53L8CX_DISABLE_REFLECTANCE_PERCENT"))]
+            if bh.bh_idx() == VL53L8CX_REFLECTANCE_EST_PC_IDX as u32 {
+                result.reflectance[..msize].copy_from_slice(src); 
+                continue;
+            }
+
+            #[cfg(not(feature = "VL53L8CX_DISABLE_TARGET_STATUS"))]
+            if bh.bh_idx() == VL53L8CX_TARGET_STATUS_IDX as u32 {
+                result.target_status[..msize].copy_from_slice(src); 
+                continue;
+            }
+
+            #[cfg(not(feature = "VL53L8CX_DISABLE_MOTION_INDICATOR"))]
+            if bh.bh_idx() == VL53L8CX_MOTION_DETEC_IDX as u32 {
+                from_u8_to_motion_indicator(src, &mut result.motion_indicator);
+                continue;
+            }
         }
         if VL53L8CX_USE_RAW_FORMAT == 0 {
             /* Convert data into their real format */
-            if VL53L8CX_DISABLE_AMBIENT_PER_SPAD == 0 {
+            #[cfg(not(feature = "VL53L8CX_DISABLE_AMBIENT_PER_SPAD"))] {
                 for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
                     result.ambient_per_spad[i] /= 2048;
                 }
             }
             for i in 0..(VL53L8CX_RESOLUTION_8X8 as usize)*(VL53L8CX_NB_TARGET_PER_ZONE as usize) {
-                if VL53L8CX_DISABLE_DISTANCE_MM == 0 {
+                #[cfg(not(feature = "VL53L8CX_DISABLE_DISTANCE_MM"))] {
                     result.distance_mm[i] /= 4;
                     if result.distance_mm[i] < 0 {
                         result.distance_mm[i] = 0;
                     }
                 }
-                if VL53L8CX_DISABLE_REFLECTANCE_PERCENT == 0 {
+                #[cfg(not(feature = "VL53L8CX_DISABLE_REFLECTANCE_PERCENT"))] {
                     result.reflectance[i] /= 2;
                 }
-                if VL53L8CX_RANGE_SIGMA_MM == 0 {
+                #[cfg(not(feature = "VL53L8CX_RANGE_SIGMA_MM"))]{
                     result.range_sigma_mm[i] /= 128;
                 }
-                if VL53L8CX_DISABLE_SIGNAL_PER_SPAD == 0 {
-                    result.signal_per_spad[i] /= 2048;
+                #[cfg(not(feature = "VL53L8CX_DISABLE_SIGNAL_PER_SPAD"))] {
+                    result.signal_per_spad[i] /= 2048;   
                 }
-            }
-            /* Set target status to 255 if no target is detected for this zone */
-            if VL53L8CX_DISABLE_NB_TARGET_DETECTED == 0 {
-                for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
-                    if result.nb_target_detected[i] == 0 {
-                        for j in 0..VL53L8CX_NB_TARGET_PER_ZONE as usize {
-                            if VL53L8CX_DISABLE_TARGET_STATUS == 0 {
+                /* Set target status to 255 if no target is detected for this zone */
+                #[cfg(not(any(feature="VL53L8CX_DISABLE_DISTANCE_MM", feature="VL53L8CX_DISABLE_TARGET_STATUS")))] {
+                    for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
+                        if result.nb_target_detected[i] == 0 {
+                            for j in 0..VL53L8CX_NB_TARGET_PER_ZONE as usize {
                                 result.target_status[VL53L8CX_NB_TARGET_PER_ZONE as usize*i + j] = 255;
                             }
                         }
@@ -744,7 +792,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 }
             }
 
-            if VL53L8CX_DISABLE_MOTION_INDICATOR == 0 {
+            #[cfg(not(feature = "VL53L8CX_DISABLE_MOTION_INDICATOR"))] {
                 for i in 0..32 {
                     result.motion_indicator.motion[i] /= 65535;
                 }
