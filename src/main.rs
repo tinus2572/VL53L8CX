@@ -219,9 +219,9 @@ if ENABLE_THRESHOLD == true {
         thresholds[i].param_high_thresh = 600;
     }
     // thresholds[resolution as usize].zone_num |= VL53L8CX_LAST_THRESHOLD;
-    sensor.set_detection_threshholds_enable(0).unwrap(); // Disable thresholds detection
-    sensor.set_detection_threshholds(&mut thresholds).unwrap();
-    sensor.set_detection_threshholds_enable(1).unwrap();
+    sensor.set_detection_thresholds_enable(0).unwrap(); // Disable thresholds detection
+    sensor.set_detection_thresholds(&mut thresholds).unwrap();
+    sensor.set_detection_thresholds_enable(1).unwrap();
 }
 
     sensor.set_resolution(resolution).unwrap();

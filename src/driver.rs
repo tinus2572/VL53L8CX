@@ -40,26 +40,46 @@ pub enum Error<B> {
     InvalidParam
 }
 
+/**
+ * @brief Structure ResultsData contains the ranging results of
+ * VL53L8CX. If user wants more than 1 target per zone, the results can be split
+ * into 2 sub-groups :
+ * - Per zone results. These results are common to all targets (ambient_per_spad
+ * , nb_target_detected and nb_spads_enabled).
+ * - Per target results : These results are different relative to the detected
+ * target (signal_per_spad, range_sigma_mm, distance_mm, reflectance,
+ * target_status).
+ */
 #[repr(C)]
 pub struct ResultsData {
+  /* Internal sensor silicon temperature */
     pub silicon_temp_degc: i8, 
     #[cfg(not(feature="VL53L8CX_DISABLE_AMBIENT_PER_SPAD"))]
-    pub ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
+  /* Ambient noise in kcps/spads */
+  pub ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
     #[cfg(not(feature="VL53L8CX_DISABLE_NB_TARGET_DETECTED"))]
-    pub nb_target_detected: [u8; VL53L8CX_RESOLUTION_8X8 as usize],
+  /* Number of valid target detected for 1 zone */
+  pub nb_target_detected: [u8; VL53L8CX_RESOLUTION_8X8 as usize],
     #[cfg(not(feature="VL53L8CX_DISABLE_NB_SPADS_ENABLED"))]
+  /* Number of spads enabled for this ranging */
     pub nb_spads_enabled: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
     #[cfg(not(feature="VL53L8CX_DISABLE_SIGNAL_PER_SPAD"))]
+  /* Signal returned to the sensor in kcps/spads */
     pub signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_RANGE_SIGMA_MM"))]
+  /* Sigma of the current distance in mm */
     pub range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_DISTANCE_MM"))]
+  /* Measured distance in mm */
     pub distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_REFLECTANCE_PERCENT"))]
+  /* Estimated reflectance in percent */
     pub reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_TARGET_STATUS"))]
+  /* Status indicating the measurement validity (5 & 9 means ranging OK)*/
     pub target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_MOTION_INDICATOR"))]
+  /* Motion detector results */
     pub motion_indicator: MotionIndicator
 } 
 
@@ -90,7 +110,10 @@ impl ResultsData {
 }
 
 impl<B: BusOperation> Vl53l8cx<B> {
-
+    /**
+     * @brief Inner function, not available outside this file. This function is used
+     * to wait for an answer from VL53L8CX sensor.
+     */
     pub fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
 
@@ -108,7 +131,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
         }
         Err(Error::Timeout)
     }
-
+/*
+ * Inner function, not available outside this file. This function is used to
+ * wait for the MCU to boot.
+ */
     pub fn poll_for_mcu_boot(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
 
@@ -127,7 +153,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
         }
         Err(Error::Timeout)
     }
-
+/**
+ * @brief Inner function, not available outside this file. This function is used
+ * to set the offset data gathered from NVM.
+ */
     pub fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut signal_grid: [u32; 64] = [0; 64];
         let mut range_grid: [i16; 64] = [0; 64];
@@ -178,7 +207,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(())
     }   
-
+/**
+ * @brief Inner function, not available outside this file. This function is used
+ * to set the Xtalk data from generic configuration, or user's calibration.
+ */
     pub fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let res4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x17, 0x08, 0x10, 0x10, 0x07];
         let dss_4x4: [u8; 8] = [0x00, 0x78, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08];
@@ -296,6 +328,15 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
     
+/**
+ * @brief This function can be used to read 'extra data' from DCI. Using a known
+ * index, the function fills the casted structure passed in argument.
+ * Please note that the FW only accept data of 32 bits. So data can
+ * only have a size of 32, 64, 96, 128, bits ....
+ * @param (u16) index : Index of required value.
+ * @param (usize)data_size : This field must be the structure or array size
+ * (using sizeof() function).
+ */
     pub fn dci_read_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let read_size: usize = data_size + 12; 
         let mut cmd: [u8; 12] = [
@@ -327,6 +368,15 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
     
+/**
+ * @brief This function can be used to write 'extra data' to DCI. The data can
+ * be simple data, or casted structure.
+ * Please note that the FW only accept data of 32 bits. So data can
+ * only have a size of 32, 64, 96, 128, bits ..
+ * @param (u16) index : Index of required value.
+ * @param (usize)data_size : This field must be the structure or array size
+ * (using sizeof() function).
+ */
     pub fn dci_write_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut headers: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0f, 0x05, 0x01,
@@ -365,6 +415,18 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
     
+/**
+ * @brief This function can be used to replace 'extra data' in DCI. The data can
+ * be simple data, or casted structure.
+ * Please note that the FW only accept data of 32 bits. So data can
+ * only have a size of 32, 64, 96, 128, bits ..
+ * @param (u16) index : Index of required value.
+ * @param (usize)*data_size : This field must be the structure or array size
+ * (using sizeof() function).
+ * @param (&[u8]) new_data : Contains the new fields.
+ * @param (usize) new_data_size : New data size.
+ * @param (usize) new_data_pos : New data position into the buffer.
+ */
     pub fn dci_replace_data(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
         self.dci_read_data(index, data_size)?;
         self.temp_buffer[new_data_pos..new_data_pos+new_data_size].copy_from_slice(&new_data[..new_data_size]);
@@ -373,6 +435,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }   
 
+/**
+ * @brief Mandatory function used to initialize the sensor. This function must
+ * be called after a power on, to load the firmware into the VL53L8CX. It takes
+ * a few hundred milliseconds.
+ */
     pub fn init(&mut self) -> Result<(), Error<B::Error>> {
         let pipe_ctrl: [u8; 4] = [VL53L8CX_NB_TARGET_PER_ZONE as u8, 0x00, 0x01, 0x00];
         let single_range: [u32; 1] = [0x01];
@@ -504,6 +571,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+/**
+ * @brief This function starts a ranging session. When the sensor streams, host
+ * cannot change settings 'on-the-fly'.
+ */
     pub fn start_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let resolution: u8 = self.get_resolution()?;
         let mut tmp: [u16; 1] = [0];
@@ -565,7 +636,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         
         header_config[0] = self.data_read_size;
         header_config[1] = 12+1 as u32;
-        
+
         from_u32_to_u8(&header_config, &mut self.temp_buffer[..8]);
         self.dci_write_data(VL53L8CX_DCI_OUTPUT_CONFIG, 8)?;
 
@@ -597,6 +668,10 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+/**
+ * @brief This function stops the ranging session. It must be used when the
+ * sensor streams, after calling vl53l8cx_start_ranging().
+ */
     #[allow(dead_code)]
     pub fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
@@ -641,7 +716,12 @@ impl<B: BusOperation> Vl53l8cx<B> {
 
         Ok(())
     }
-    
+    /**
+ * @brief This function checks if a new data is ready by polling I2C. If a new
+ * data is ready, a flag will be raised.
+ * @return (bool) isReady : Value is 0 if data
+ * is not ready, or 1 if a new data is ready.
+ */
     pub fn check_data_ready(&mut self) -> Result<bool, Error<B::Error>> {
         let is_ready: bool;
         self.read_from_register(0, 4)?;
@@ -663,6 +743,11 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(is_ready)
     }
 
+/**
+ * @brief This function gets the ranging data, using the selected output and the
+ * resolution.
+ * @return (ResultsData) results : VL53L5 results structure.
+ */
     pub fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
         let mut result: ResultsData = ResultsData::new();
         let mut msize: usize;

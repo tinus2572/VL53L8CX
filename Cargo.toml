@@ -28,6 +28,9 @@ codegen-units = 1 # better optimizations
 debug = true # symbols are nice and they don't increase the size on Flash
 lto = true # better optimizations
 
+# All macro below are used to configure the sensor output. User can
+# define some macros if he wants to disable selected output, in order to reduce
+# I2C access.
 [features]
 VL53L8CX_DISABLE_AMBIENT_PER_SPAD = []
 VL53L8CX_DISABLE_NB_SPADS_ENABLED = []

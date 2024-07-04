@@ -3,7 +3,11 @@ use consts::*;
 use utils::*;
 
 use crate::{consts, utils, BusOperation, Vl53l8cx, Error};
-
+/**
+ * @brief Structure VL53L8CX_DetectionThresholds contains a single threshold.
+ * This structure  is never used alone, it must be used as an array of 64
+ * thresholds (defined by macro VL53L8CX_NB_THRESHOLDS).
+ */
 #[repr(C)]
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
@@ -36,8 +40,11 @@ impl DetectionThresholds {
 fn from_u8_to_thresholds(src: &[u8], dst: &mut [DetectionThresholds]) {
     for i in 0..dst.len() {
         let j: usize = 12 * i;
-        from_u8_to_i32(&src[j..j+4], &mut [dst[i].param_low_thresh]);
-        from_u8_to_i32(&src[j+4..j+8], &mut [dst[i].param_high_thresh]);
+        let mut tmp : [i32;1] = [0];
+        from_u8_to_i32(&src[j..j+4], &mut tmp);
+        dst[i].param_low_thresh = tmp[0];
+        from_u8_to_i32(&src[j+4..j+8], &mut tmp);
+        dst[i].param_high_thresh = tmp[0];
         dst[i].measurement = src[j+8];
         dst[i].th_type = src[j+9];
         dst[i].zone_num = src[j+10];
@@ -59,15 +66,23 @@ fn from_thresholds_to_u8(src: &[DetectionThresholds], dst: &mut [u8]) {
 
 impl<B: BusOperation> Vl53l8cx<B> {
 #[allow(dead_code)]
-    pub fn get_detection_threshholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
+/**
+ * @brief This function allows indicating if the detection thresholds are
+ * enabled.
+ * @return (u8) enabled : Set to 1 if enabled, or 0 if disable.
+ */
+    pub fn get_detection_thresholds_enable(&mut self) -> Result<u8, Error<B::Error>> {
         let enabled: u8;
         self.dci_read_data(VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG, 8)?;
         enabled = self.temp_buffer[0x1];
         Ok(enabled)
     }
-
+/**
+ * @brief This function allows enable the detection thresholds.
+ * @param (u8) enabled : Set to 1 to enable, or 0 to disable thresholds.
+ */
 #[allow(dead_code)]
-    pub fn set_detection_threshholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
+    pub fn set_detection_thresholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
         let mut grp_global_config: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
         let mut tmp: [u8; 1] = [0];
         if enabled == 1 {
@@ -86,14 +101,17 @@ impl<B: BusOperation> Vl53l8cx<B> {
         
         Ok(())
     }
-
+/**
+ * @brief This function allows getting the detection thresholds.
+ * @return ([DetectionThresholds; VL53L8CX_NB_THRESHOLDS]) thresholds : Array of 64 thresholds.
+ */
     #[allow(dead_code)]
-    pub fn get_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] ) -> Result<(), Error<B::Error>> {
-  
+    pub fn get_detection_thresholds(&mut self) -> Result<[DetectionThresholds; VL53L8CX_NB_THRESHOLDS], Error<B::Error>> {
+        let mut thresholds: [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] = [DetectionThresholds::new(); VL53L8CX_NB_THRESHOLDS];
+        
         /* Get thresholds configuration */
-        from_thresholds_to_u8(thresholds, &mut self.temp_buffer[..VL53L8CX_NB_THRESHOLDS * 12]);
         self.dci_read_data(VL53L8CX_DCI_DET_THRESH_START, VL53L8CX_NB_THRESHOLDS * 12)?;
-        from_u8_to_thresholds(&self.temp_buffer[..VL53L8CX_NB_THRESHOLDS * 12], thresholds);
+        from_u8_to_thresholds(&self.temp_buffer[..VL53L8CX_NB_THRESHOLDS * 12], &mut thresholds);
         
         for i in 0..VL53L8CX_NB_THRESHOLDS {
             if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
@@ -116,11 +134,15 @@ impl<B: BusOperation> Vl53l8cx<B> {
                 thresholds[i].param_high_thresh /= 65535;
             }
         }
-        Ok(())
+        Ok(thresholds)
     }
 
+/**
+ * @brief This function allows programming the detection thresholds.
+ * @param (&mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS]) thresholds :  Array of 64 thresholds.
+ */
     #[allow(dead_code)]
-    pub fn set_detection_threshholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] ) -> Result<(), Error<B::Error>> {
+    pub fn set_detection_thresholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] ) -> Result<(), Error<B::Error>> {
         for i in 0..VL53L8CX_NB_THRESHOLDS {
             if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
                 thresholds[i].param_low_thresh  *= 4;
@@ -154,15 +176,41 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
 
+/**
+ * @brief This function is used to enable or disable the auto-stop feature.
+ * When ToF runs in autonomous mode with detection threshold, the sensor
+ * only emits an interrupt (INT pin) when a threshold is reached. Interrupt
+ * is raised when the measurement is completed. It is possible to abort the ranging
+ * without waiting for end of measurement completed by enabling the auto-stop. The
+ * sensor emits an interrupt and quickly aborts the measurements in progress. Please
+ * note that vl53l8cx_stop_ranging() function needs to be used after interrupt raised
+ * for a clean stop.
+ * This function is used to get the auto_stop flag.
+ * @return (u8) auto_stop :  Pointer of auto-stop feature, 0 disabled
+ */
     #[allow(dead_code)]
-    pub fn get_detection_threshholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
+    pub fn get_detection_thresholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
         let auto_stop: u8 = self.temp_buffer[0x03];
         Ok(auto_stop)
     }
 
+/**
+ * @brief This function is used to enable or disable the auto-stop feature.
+ * When ToF runs in autonomous mode with detection threshold, the sensor
+ * only emits an interrupt (INT pin) when a threshold is reached. Interrupt
+ * is raised when the measurement is completed. It is possible to abort the ranging
+ * without waiting for end of measurement completed by enabling the auto-stop. The
+ * sensor emits an interrupt and quickly aborts the measurements in progress. Please
+ * note that vl53l8cx_stop_ranging() function needs to be used after interrupt raised
+ * for a clean stop.
+ * This function is used to set the auto_stop flag.
+ * @param (u8) auto_stop :  Pointer of auto-stop feature, 0 disabled
+ * (default) or 1 enabled.
+ * @return (u8) auto_stop :  Pointer of auto-stop feature, 0 disabled
+ */
     #[allow(dead_code)]
-    pub fn set_detection_threshholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
+    pub fn set_detection_thresholds_auto_stop(&mut self, auto_stop: u8) -> Result<u8, Error<B::Error>> {
         let tmp: [u8; 1] = [auto_stop];
         self.dci_replace_data(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
         Ok(auto_stop)

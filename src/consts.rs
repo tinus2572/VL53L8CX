@@ -1,12 +1,25 @@
 use embedded_hal::i2c::SevenBitAddress;
 
+/**
+ * @brief Default I2C address of VL53L8CX sensor. Can be changed using function
+ * vl53l8cx_set_i2c_address() function is called.
+ */
 #[allow(dead_code)]
 pub const VL53L8CX_DEFAULT_I2C_ADDRESS: SevenBitAddress = 0x52 >> 1;
 
+/**
+ * @brief Macro VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8 allows
+ * setting sensor in 4x4 mode or 8x8 mode, using function
+ * vl53l8cx_set_resolution().
+ */
 pub const VL53L8CX_RESOLUTION_4X4: u8 = 16;
 pub const VL53L8CX_RESOLUTION_8X8: u8 = 64;
 
-
+/**
+ * @brief Macro VL53L8CX_STATUS_OK indicates that VL53L5 sensor has no error.
+ * Macro VL53L8CX_STATUS_ERROR indicates that something is wrong (value,
+ * I2C access, ...). Macro VL53L8CX_MCU_ERROR is used to indicate a MCU issue.
+ */
 #[allow(dead_code)]
 pub const VL53L8CX_STATUS_OK: u8 = 0;
 #[allow(dead_code)]
@@ -22,7 +35,9 @@ pub const VL53L8CX_STATUS_INVALID_PARAM: u8 = 127;
 #[allow(dead_code)]
 pub const VL53L8CX_STATUS_ERROR: u8 = 255;
 
-
+/**
+ * @brief Definitions for Range results block headers
+ */
 pub const VL53L8CX_START_BH: u32 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0x0000000D } else { 0x0000000D };
 pub const VL53L8CX_METADATA_BH: u32 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0x54B400C0 } else { 0x54B400C0 };
 pub const VL53L8CX_COMMONDATA_BH: u32 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 0x54C00040 } else { 0x54C00040 };
@@ -62,15 +77,36 @@ pub const VL53L8CX_CONFIGURATION_SIZE: usize = 972;
 pub const VL53L8CX_OFFSET_BUFFER_SIZE: usize = 488;
 pub const VL53L8CX_XTALK_BUFFER_SIZE: usize = 776;
 
+/**
+ * @brief Macro VL53L8CX_TARGET_ORDER_STRONGEST or VL53L8CX_TARGET_ORDER_CLOSEST
+ *  are used to select the target order for data output.
+ */
 pub const VL53L8CX_TARGET_ORDER_CLOSEST: u8 = 1;
 pub const VL53L8CX_TARGET_ORDER_STRONGEST: u8 = 2;
-
+/**
+ * @brief Macro VL53L8CX_RANGING_MODE_CONTINUOUS and
+ * VL53L8CX_RANGING_MODE_AUTONOMOUS are used to change the ranging mode.
+ * Autonomous mode can be used to set a precise integration time, whereas
+ * continuous is always maximum.
+ */
 pub const VL53L8CX_RANGING_MODE_CONTINUOUS: u8 = 1;
 pub const VL53L8CX_RANGING_MODE_AUTONOMOUS: u8 = 3;
-
+/**
+ * @brief The default power mode is VL53L8CX_POWER_MODE_WAKEUP. User can choose two
+ * different modes to save power consumption when is the device
+ * is not used:
+ * - VL53L8CX_POWER_MODE_SLEEP: This mode retains the firmware and the configuration. It
+ * is recommended when the device needs to quickly wake-up.
+ * - VL53L8CX_POWER_MODE_DEEP_SLEEP: This mode clears all memory, by consequence the firmware,
+ * the configuration and the calibration are lost. It is recommended when the device sleeps during
+ * a long time as it consumes a very low current consumption.
+ * Both modes can be changed using function vl53l8cx_set_power_mode().
+ */
 pub const VL53L8CX_POWER_MODE_SLEEP: u8 = 0;
 pub const VL53L8CX_POWER_MODE_WAKEUP: u8 = 1;
-
+/**
+ * @brief Inner Macro for API. Not for user, only for development.
+ */
 pub const VL53L8CX_DCI_FREQ_HZ: u16 = 0x5458;
 pub const VL53L8CX_DCI_INT_TIME: u16 = 0x545C;
 pub const VL53L8CX_DCI_RANGING_MODE: u16 = 0xAD30;
@@ -94,7 +130,9 @@ pub const VL53L8CX_UI_CMD_STATUS: u16 = 0x2C00;
 pub const VL53L8CX_UI_CMD_START: u16 = 0x2C04;
 pub const VL53L8CX_UI_CMD_END: u16 = 0x2FFF;
 
-
+/**
+ * @brief Inner values for API. Max buffer size depends of the selected output.
+ */
 const L5CX_AMB_SIZE: usize = if cfg!(feature = "VL53L8CX_DISABLE_AMBIENT_PER_SPAD") { 0 } else { 260 };
 const L5CX_SPAD_SIZE: usize = if cfg!(feature = "VL53L8CX_DISABLE_NB_SPADS_ENABLED") { 0 } else { 260 };
 const L5CX_NTAR_SIZE: usize = if cfg!(feature = "VL53L8CX_DISABLE_NB_TARGET_DETECTED") { 0 } else { 68 };
@@ -104,13 +142,22 @@ const L5CX_DIST_SIZE: usize = if cfg!(feature = "VL53L8CX_DISABLE_DISTANCE_MM") 
 const L5CX_RFLEST_SIZE: usize = if cfg!(feature = "VL53L8CX_DISABLE_REFLECTANCE_PERCENT") { 0 } else { 256 * VL53L8CX_NB_TARGET_PER_ZONE as usize + 4 };
 const L5CX_STA_SIZE: usize = if cfg!(feature = "VL53L8CX_DISABLE_TARGET_STATUS") { 0 } else { 256 * VL53L8CX_NB_TARGET_PER_ZONE as usize + 4 };
 const L5CX_MOT_SIZE: usize = if cfg!(feature = "VL53L8CX_DISABLE_MOTION_INDICATOR") { 0 } else { 144 };
- 
+ /**
+ * @brief Macro VL53L8CX_MAX_RESULTS_SIZE indicates the maximum size used by
+ * output through I2C. Value 40 corresponds to headers + meta-data + common-data
+ * and 20 corresponds to the footer.
+ */
 const VL53L8CX_MAX_RESULTS_SIZE: usize = 40 
     + L5CX_AMB_SIZE + L5CX_SPAD_SIZE + L5CX_NTAR_SIZE + L5CX_SPS_SIZE 
     + L5CX_SIGR_SIZE + L5CX_DIST_SIZE + L5CX_RFLEST_SIZE + L5CX_STA_SIZE 
     + L5CX_MOT_SIZE + 20;
 
 
+/**
+ * @brief Macro VL53L8CX_TEMPORARY_BUFFER_SIZE can be used to know the size of
+ * the temporary buffer. The minimum size is 1024, and the maximum depends of
+ * the output configuration.
+ */
 pub const VL53L8CX_TEMPORARY_BUFFER_SIZE: usize = 
 if VL53L8CX_MAX_RESULTS_SIZE < 1024 { 
     1024
@@ -118,20 +165,41 @@ if VL53L8CX_MAX_RESULTS_SIZE < 1024 {
     VL53L8CX_MAX_RESULTS_SIZE 
 };
 
+/*
+ * @brief The macro below can be used to avoid data conversion into the driver.
+ * By default there is a conversion between firmware and user data. Using this macro
+ * allows to use the firmware format instead of user format. The firmware format allows
+ * an increased precision.
+ */
 pub const VL53L8CX_USE_RAW_FORMAT: u8 = 0;
 
+/*
+ * @brief The macro below is used to define the number of target per zone sent
+ * through I2C. This value can be changed by user, in order to tune I2C
+ * transaction, and also the total memory size (a lower number of target per
+ * zone means a lower RAM). The value must be between 1 and 4.
+ */
 pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 1;
 
 pub const DEFAULT_I2C_BUFFER_LEN: usize = 32;
 
 
-
+/**
+ * @brief Macro VL53L8CX_NB_THRESHOLDS indicates the number of checkers. This
+ * value cannot be changed.
+ */
 #[allow(dead_code)]
 pub const VL53L8CX_NB_THRESHOLDS: usize = 64;
+/**
+ * @brief Macro VL53L8CX_LAST_THRESHOLD is used to indicate the end of checkers
+ * programming.
+ */
 #[allow(dead_code)]
 pub const VL53L8CX_LAST_THRESHOLD: u8 = 128;
 
-
+/**
+ * @brief Inner Macro for API. Not for user, only for development.
+ */
 #[allow(dead_code)]
 pub const VL53L8CX_DCI_DET_THRESH_CONFIG: u16 = 0x5488;
 #[allow(dead_code)]
@@ -140,7 +208,10 @@ pub const VL53L8CX_DCI_DET_THRESH_GLOBAL_CONFIG: u16 = 0xB6E0;
 pub const VL53L8CX_DCI_DET_THRESH_START: u16 = 0xB6E8;
 #[allow(dead_code)]
 pub const VL53L8CX_DCI_DET_THRESH_VALID_STATUS: u16 = 0xB9F0;
-
+/**
+ * @brief The following macro are used to define the 'param_type' of a checker.
+ * They indicate what is the measurement to catch.
+ */
 #[allow(dead_code)]
 pub const VL53L8CX_DISTANCE_MM: u8 = 1;
 #[allow(dead_code)]
@@ -157,11 +228,17 @@ pub const VL53L8CX_TARGET_STATUS: u8 = 12;
 pub const VL53L8CX_NB_SPADS_ENABLED: u8 = 13;
 #[allow(dead_code)]
 pub const VL53L8CX_MOTION_INDICATOR: u8 = 19;
-
+/**
+ * @brief Inner Macro for plugin. Not for user, only for development.
+ */
 pub const VL53L8CX_DCI_CAL_CFG: u16 = 0x5470;
 pub const VL53L8CX_DCI_XTALK_CFG: u16 = 0xAD94;
 
-
+/**
+ * @brief The following macro are used to define the 'type' of a checker.
+ * They indicate the window of measurements, defined by low and a high
+ * thresholds.
+ */
 pub const VL53L8CX_IN_WINDOW: u8 = 0;
 #[allow(dead_code)]
 pub const VL53L8CX_OUT_OF_WINDOW: u8 = 1;
@@ -173,6 +250,11 @@ pub const VL53L8CX_GREATER_THAN_MAX_CHECKER: u8 = 3;
 pub const VL53L8CX_EQUAL_MIN_CHECKER: u8 = 4;
 #[allow(dead_code)]
 pub const VL53L8CX_NOT_EQUAL_MIN_CHECKER: u8 = 5;
+/**
+ * @brief The following macro are used to define multiple checkers in the same
+ * zone, using operators. Please note that the first checker MUST always be a OR
+ * operation.
+ */
 
 pub const VL53L8CX_OPERATION_NONE: u8 = 0;
 #[allow(dead_code)]
