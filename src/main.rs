@@ -54,6 +54,18 @@ mod xtalk;
 mod driver;
 mod utils;
 
+fn get_gradient_color(number: u32) -> u32 {
+    let max_number = 3999;
+    // 256-color mode has color codes from 16 to 231 for gradient purposes
+    let start_color = 16; // Black in 256-color mode
+    let end_color = 231; // White in 256-color mode
+    let color_range = end_color - start_color;
+    let color_code = start_color + (number * color_range / max_number);
+    return color_code;
+}
+
+
+
 fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
     // ┼ ├ ┤ ┬ ┴ ┌ └ ┐ ┘ │ ─
@@ -74,6 +86,16 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
         sig="Signal [kcps/spad]", 
         amb="Ambient [kcps/spad]"
     ).unwrap();
+
+    for j in 0..width {
+        for i in 0..width {
+            write!(
+                tx, 
+                "\x1b[48;5;{bg}m  \x1b[0m", 
+                bg=get_gradient_color(results.distance_mm[width*j+i] as u32),
+            ).unwrap();
+        } writeln!(tx, "").unwrap();
+    } writeln!(tx, "").unwrap();
 
     for j in 0..width {
         for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
@@ -110,8 +132,8 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
 const I2C: bool = true;
 const SPI: bool = false;
-const BUS: bool = SPI;
-const ENABLE_THRESHOLD: bool = true;
+const BUS: bool = I2C;
+const ENABLE_THRESHOLD: bool = false;
 
 #[entry]
 fn main() -> ! {
@@ -139,7 +161,7 @@ fn main() -> ! {
         .parity_none(),
         &clocks).unwrap();
     
-    let width: usize = 4;
+    let width: usize = 8;
     let resolution: u8 = (width * width) as u8; 
 
 if BUS == SPI {

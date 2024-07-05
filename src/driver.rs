@@ -131,6 +131,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
         }
         Err(Error::Timeout)
     }
+
 /*
  * Inner function, not available outside this file. This function is used to
  * wait for the MCU to boot.
