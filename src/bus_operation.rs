@@ -46,7 +46,7 @@ impl<P: I2c> BusOperation for Vl53l8cxI2C<P> {
 }
 
 pub struct Vl53l8cxSPI<P> {
-    spi: P,
+    pub spi: P,
 }
 
 impl<P: SpiDevice> Vl53l8cxSPI<P> {
@@ -69,15 +69,14 @@ impl<P: SpiDevice> BusOperation for Vl53l8cxSPI<P> {
 
     #[inline]
     fn write(&mut self, wbuf: &[u8]) -> Result<(), Self::Error> {
-        self.spi.transaction(&mut [Operation::Write(&[wbuf[0] | 0x80])])?;
-        self.spi.transaction(&mut [Operation::Write(&wbuf[1..])])?;
+        self.spi.transaction(&mut [Operation::Write(&wbuf)])?;
 
         Ok(())
     }
 
     #[inline]
     fn write_read(&mut self, wbuf: &[u8], rbuf: &mut [u8]) -> Result<(), Self::Error> {
-        self.spi.transaction(&mut [Operation::Write(&[wbuf[0] | 0x80, wbuf[1]]), Operation::Read(rbuf)])?;
+        self.spi.transaction(&mut [Operation::Write(&wbuf), Operation::Read(rbuf)])?;
         Ok(())
     }
 }
