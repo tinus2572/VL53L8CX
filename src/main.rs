@@ -143,7 +143,7 @@ fn main() -> ! {
     let cp: CorePeripherals = CorePeripherals::take().unwrap();
     let rcc: Rcc = dp.RCC.constrain();
     let frequency = 8.MHz();
-    let clocks: Clocks = rcc.cfgr.use_hse(frequency).freeze();
+    let clocks: Clocks = rcc.cfgr.use_hse(frequency).sysclk(84.MHz()).freeze();
     let delay: SysDelay = cp.SYST.delay(&clocks);
 
     let gpioa: gpioa::Parts = dp.GPIOA.split();
@@ -166,11 +166,12 @@ fn main() -> ! {
 
 if BUS == SPI {
         
-    use stm32f4xx_hal::spi::{Spi, Polarity, Phase, Mode};
+    use stm32f4xx_hal::spi::Spi;
     use stm32f4xx_hal::pac::SPI1;
+    use embedded_hal::spi::MODE_3;
     use embedded_hal_bus::spi::{NoDelay, RefCellDevice};
 
-    let sclk: Pin<'B', 3, Alternate<5>> = gpiob.pb3.into_alternate();
+    let sclk: Pin<'B', 3, Alternate<5>> = gpiob.pb3.into_alternate().internal_pull_up(true);
     let miso: Pin<'B', 4, Alternate<5>> = gpiob.pb4.into_alternate();
     let mosi: Pin<'B', 5, Alternate<5>> = gpiob.pb5.into_alternate();
     let cs_pin: Pin<'B', 6, Output> = gpiob.pb6.into_push_pull_output_in_state(High);
@@ -178,10 +179,7 @@ if BUS == SPI {
     let spi: Spi<SPI1> = Spi::new(
         dp.SPI1,
         (sclk, miso, mosi),
-        Mode{
-            polarity: Polarity::IdleHigh,
-            phase: Phase::CaptureOnSecondTransition,
-        },
+        MODE_3,
         2.MHz(),
         &clocks,);
         
@@ -194,41 +192,6 @@ if BUS == SPI {
         delay
     ).unwrap();
 
-    let mut rbuf: [u8; 1] = [0];
-
-    let mut addr: u16 = 0x7fff;
-    addr = addr | 0x8000;
-    let a: u8 = (addr >> 8) as u8;
-    let b: u8 = (addr & 0xff) as u8;
-    
-    let mut addr2: u16 = 0x7fff;
-    addr2 = addr2 & !0x8000;
-    let c: u8 = (addr2 >> 8) as u8;
-    let d: u8 = (addr2 & 0xff) as u8;
-
-    let mut addr3: u16 = 0x0;
-    addr3 = addr3 & !0x8000;
-    let e: u8 = (addr3 >> 8) as u8;
-    let f: u8 = (addr3 & 0xff) as u8;
-
-    let mut addr4: u16 = 0x1;
-    addr4 = addr4 & !0x8000;
-    let g: u8 = (addr4 >> 8) as u8;
-    let h: u8 = (addr4 & 0xff) as u8;
-    sensor.bus.spi.transaction(&mut [Operation::Write(&[a, b, 0x00])]).unwrap();
-    sensor.bus.spi.transaction(&mut [Operation::Write(&[c, d]), Operation::Read(&mut rbuf)]).unwrap();
-    assert_eq!(rbuf[0], 0x00);
-
-    sensor.bus.spi.transaction(&mut [Operation::Write(&[e, f]), Operation::Read(&mut rbuf)]).unwrap();
-    assert_eq!(rbuf[0], 0xf0);
-    sensor.bus.spi.transaction(&mut [Operation::Write(&[g, h]), Operation::Read(&mut rbuf)]).unwrap();
-    assert_eq!(rbuf[0], 0x0c);
-    
-    sensor.bus.spi.transaction(&mut [Operation::Write(&[a, b, 0x02])]).unwrap();
-    sensor.bus.spi.transaction(&mut [Operation::Write(&[c, d]), Operation::Read(&mut rbuf)]).unwrap();
-    assert_eq!(rbuf[0], 0x02);
-
-    
     sensor.init().unwrap();
     sensor.set_resolution(resolution).unwrap();
     sensor.start_ranging().unwrap();
@@ -266,7 +229,7 @@ if BUS == SPI {
             lpn_pin,
             delay
         ).unwrap();
-        
+
     sensor.init_sensor(address).unwrap(); 
 
 if ENABLE_THRESHOLD == true {   

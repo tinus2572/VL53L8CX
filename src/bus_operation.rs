@@ -62,21 +62,21 @@ impl<P: SpiDevice> BusOperation for Vl53l8cxSPI<P> {
 
     #[inline]
     fn read(&mut self, rbuf: &mut [u8]) -> Result<(), Self::Error> {
-        self.spi.transaction(&mut [Operation::Read(rbuf)])?;
+        self.spi.read(rbuf)?;
 
         Ok(())
     }
 
     #[inline]
     fn write(&mut self, wbuf: &[u8]) -> Result<(), Self::Error> {
-        self.spi.transaction(&mut [Operation::Write(&wbuf)])?;
+        self.spi.transaction(&mut [Operation::Write(&[wbuf[0] | 0x80]), Operation::Write(&wbuf[1..])])?;
 
         Ok(())
     }
 
     #[inline]
     fn write_read(&mut self, wbuf: &[u8], rbuf: &mut [u8]) -> Result<(), Self::Error> {
-        self.spi.transaction(&mut [Operation::Write(&wbuf), Operation::Read(rbuf)])?;
+        self.spi.transaction(&mut [Operation::Write(&[wbuf[0] & !0x80, wbuf[1]]), Operation::Read(rbuf)])?;
         Ok(())
     }
 }

@@ -271,17 +271,6 @@ impl<B: BusOperation> Vl53l8cx<B> {
         Ok(())
     }
     
-    pub fn write_to_register_check(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
-        let a: u8 = (reg >> 8) as u8;
-        let b: u8 = (reg & 0xFF) as u8; 
-        self.bus.write(&[a, b, val]).map_err(Error::Bus)?;
-        let tmp = self.temp_buffer[0];
-        self.read_from_register(reg, 1)?;
-        assert_eq!(self.temp_buffer[0], val);
-        self.temp_buffer[0] = tmp;
-        Ok(())
-    }
-    
     pub fn write_multi_to_register(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
         let size = wbuf.len();
         let mut write_size: usize;
@@ -331,9 +320,9 @@ impl<B: BusOperation> Vl53l8cx<B> {
      * @brief Check if the VL53L8CX sensor is alive(responding to I2C communication).
     */
     pub fn is_alive(&mut self) -> Result<(), Error<B::Error>> {
-        self.write_to_register_check(0x7fff, 0x00)?;
+        self.write_to_register(0x7fff, 0x00)?;
         self.read_from_register(0, 2)?;
-        self.write_to_register_check(0x7fff, 0x02)?;
+        self.write_to_register(0x7fff, 0x02)?;
         let device_id: u8 = self.temp_buffer[0];
         let revision_id: u8 = self.temp_buffer[1];
         if (device_id != 0xF0) || (revision_id != 0x0C) {
@@ -436,7 +425,7 @@ impl<B: BusOperation> Vl53l8cx<B> {
  * Please note that the FW only accept data of 32 bits. So data can
  * only have a size of 32, 64, 96, 128, bits ..
  * @param (u16) index : Index of required value.
- * @param (usize)*data_size : This field must be the structure or array size
+ * @param (usize) data_size : This field must be the structure or array size
  * (using sizeof() function).
  * @param (&[u8]) new_data : Contains the new fields.
  * @param (usize) new_data_size : New data size.
