@@ -180,7 +180,7 @@ if BUS == SPI {
         dp.SPI1,
         (sclk, miso, mosi),
         MODE_3,
-        2.MHz(),
+        3.MHz(),
         &clocks,);
         
     let spi: RefCell<Spi<SPI1>> = RefCell::new(spi);
