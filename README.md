@@ -1,8 +1,7 @@
 # VL53L8CX drivers and example applications
 
 This crate provides a platform-agnostic driver for the ST VL53L8CX proximity sensor driver.
-The datasheet is available at <https://www.st.com/en/imaging-and-photonics-solutions/VL53L8CX.html>.
-The schematics are at <https://www.st.com/resource/en/schematic_pack/x-nucleo-53l8a1-schematic.pdf>.
+The [datasheet](https://www.st.com/en/imaging-and-photonics-solutions/VL53L8CX.html) and the [schematics](https://www.st.com/resource/en/schematic_pack/x-nucleo-53l8a1-schematic.pdf) provide all necessary information.
 This driver was built using the [embedded-hal](https://docs.rs/embedded-hal/latest/embedded_hal/) traits.
 The [stm32f4xx-hal](https://docs.rs/stm32f4xx-hal/latest/stm32f4xx_hal/) crate is also mandatory.
 Ensure that the hardware abstraction layer of your microcontroller implements the embedded-hal traits.
