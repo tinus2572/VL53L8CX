@@ -1,10 +1,10 @@
 use consts::*;
 use utils::*;
 
-use crate::{consts, utils, BusOperation, Vl53l8cx, Error};
+use crate::{consts, utils, BusOperation, Vl53l8cx, Error, OutputPin, DelayNs};
 
 
-impl<B: BusOperation> Vl53l8cx<B> {
+impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     
 /**
  * @brief This function gets the current resolution (4x4 or 8x8).

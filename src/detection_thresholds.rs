@@ -2,7 +2,7 @@
 use consts::*;
 use utils::*;
 
-use crate::{consts, utils, BusOperation, Vl53l8cx, Error};
+use crate::{consts, utils, BusOperation, Vl53l8cx, Error, OutputPin, DelayNs};
 
 /**
  * @brief Structure DetectionThresholds contains a single threshold.
@@ -23,18 +23,12 @@ pub struct DetectionThresholds {
 
 impl DetectionThresholds {
     pub fn new() -> Self {
-        let param_low_thresh: i32 = 0;
-        let param_high_thresh: i32 = 0;
-        let measurement: u8 = VL53L8CX_DISTANCE_MM;
-        let th_type: u8 = VL53L8CX_IN_WINDOW;
-        let zone_num: u8 = 0;
-        let math_op: u8 = VL53L8CX_OPERATION_NONE;
-        Self { param_low_thresh,
-            param_high_thresh,
-            measurement,
-            th_type,
-            zone_num,
-            math_op }
+        DetectionThresholds { param_low_thresh: 0,
+            param_high_thresh: 0,
+            measurement: VL53L8CX_DISTANCE_MM,
+            th_type: VL53L8CX_IN_WINDOW,
+            zone_num: 0,
+            math_op: VL53L8CX_OPERATION_NONE }
     }
 }
 
@@ -65,7 +59,7 @@ fn from_thresholds_to_u8(src: &[DetectionThresholds], dst: &mut [u8]) {
     }
 }
 
-impl<B: BusOperation> Vl53l8cx<B> {
+impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     #[allow(dead_code)]
     /**

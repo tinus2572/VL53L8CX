@@ -2,7 +2,7 @@
 use consts::*;
 use utils::*;
 
-use crate::{consts, utils, BusOperation, Error, Vl53l8cx};
+use crate::{consts, utils, BusOperation, Error, Vl53l8cx, OutputPin, DelayNs};
 
 /**
  * @brief Motion indicator internal configuration structure.
@@ -151,7 +151,7 @@ pub fn from_motion_configuration_to_u8(src: &MotionConfiguration, dst: &mut [u8]
     dst[124..156].copy_from_slice(&src.indicator_format_2);
 }
 
-impl<B: BusOperation> Vl53l8cx<B> {
+impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /**
      * @brief This function is used to initialized the motion indicator. By default,
      * indicator is programmed to monitor movements between 400mm and 1500mm.

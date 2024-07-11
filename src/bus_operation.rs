@@ -1,5 +1,5 @@
 use consts::*;
-use crate::{consts, Vl53l8cx, Error, SevenBitAddress, I2c, Pin, Output, PushPull, SpiDevice, SysDelay, Operation};
+use crate::{consts, Vl53l8cx, Error, SevenBitAddress, I2c, SpiDevice, Operation, OutputPin, DelayNs};
 
 pub trait BusOperation {
     type Error;
@@ -15,8 +15,8 @@ pub struct Vl53l8cxI2C<P> {
 }
 
 impl<P: I2c> Vl53l8cxI2C<P> {
-    pub fn new(i2c: P, address: SevenBitAddress) -> Self {
-        Self { i2c, address }
+    pub fn new(i2c: P) -> Self {
+        Vl53l8cxI2C { i2c: i2c, address: VL53L8CX_DEFAULT_I2C_ADDRESS }
     }
 }
 
@@ -46,7 +46,7 @@ impl<P: I2c> BusOperation for Vl53l8cxI2C<P> {
 }
 
 pub struct Vl53l8cxSPI<P> {
-    pub spi: P,
+    pub spi: P
 }
 
 impl<P: SpiDevice> Vl53l8cxSPI<P> {
@@ -85,31 +85,27 @@ impl<P: SpiDevice> BusOperation for Vl53l8cxSPI<P> {
     }
 }
 
-impl<P> Vl53l8cx<Vl53l8cxI2C<P>> 
+impl<P, LPN, T> Vl53l8cx<Vl53l8cxI2C<P>, LPN, T>
     where
     P: I2c,
+    LPN: OutputPin,
+    T: DelayNs
 {
     #[allow(dead_code)]
-    pub fn new_i2c(i2c: P, address: SevenBitAddress, lpn_pin: Pin<'B', 0, Output<PushPull>>, delay: SysDelay) -> Result<Self, Error<P::Error>> {
-        let streamcount: u8 = 0;
-        let data_read_size: u32 = 0;
-        let is_auto_stop_enabled: u8 = 0;
-        let bus: Vl53l8cxI2C<P> = Vl53l8cxI2C::new(i2c, address);
-        let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
-        let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
-        let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
-        let instance: Vl53l8cx<Vl53l8cxI2C<P>> = Self { 
-            temp_buffer,
-            offset_data,
-            xtalk_data,
-            streamcount,
-            data_read_size,
-            is_auto_stop_enabled,
-            lpn_pin,
-            bus,
-            delay
-        };
-        Ok(instance)
+    pub fn new_i2c(i2c: P, lpn_pin: LPN, tim: T) -> Result<Self, Error<P::Error>> 
+    {
+        Ok(Vl53l8cx { 
+            temp_buffer: [0; VL53L8CX_TEMPORARY_BUFFER_SIZE],
+            offset_data: [0; VL53L8CX_OFFSET_BUFFER_SIZE],
+            xtalk_data: [0; VL53L8CX_XTALK_BUFFER_SIZE],
+            streamcount: 0,
+            data_read_size: 0,
+            is_auto_stop_enabled: false,
+            lpn_pin: lpn_pin,
+            bus: Vl53l8cxI2C::new(i2c),
+            tim: tim,
+            chunk_size: I2C_CHUNK_SIZE
+        })
     }
     
     #[allow(dead_code)]
@@ -135,31 +131,26 @@ impl<P> Vl53l8cx<Vl53l8cxI2C<P>>
     }
 }
 
-impl<P> Vl53l8cx<Vl53l8cxSPI<P>> 
-    where P: SpiDevice,
+impl<P, LPN, T> Vl53l8cx<Vl53l8cxSPI<P>, LPN, T> 
+    where 
+    P: SpiDevice, 
+    LPN: OutputPin,
+    T: DelayNs
 {
     #[allow(dead_code)]
-    pub fn new_spi(spi: P, lpn_pin: Pin<'B', 0, Output<PushPull>>, delay: SysDelay) -> Result<Self, Error<P::Error>> {
-        let streamcount: u8 = 0;
-        let data_read_size: u32 = 0;
-        let is_auto_stop_enabled: u8 = 0;
-        let bus: Vl53l8cxSPI<P> = Vl53l8cxSPI::new(spi);
-        let temp_buffer: [u8; VL53L8CX_TEMPORARY_BUFFER_SIZE] = [0; VL53L8CX_TEMPORARY_BUFFER_SIZE];
-        let offset_data: [u8; VL53L8CX_OFFSET_BUFFER_SIZE] = [0; VL53L8CX_OFFSET_BUFFER_SIZE];
-        let xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
-        let instance: Vl53l8cx<Vl53l8cxSPI<P>> = Self { 
-            temp_buffer,
-            offset_data,
-            xtalk_data,
-            streamcount,
-            data_read_size,
-            is_auto_stop_enabled,
-            lpn_pin,
-            bus,
-            delay
-        };
-        
-        Ok(instance)
+    pub fn new_spi(spi: P, lpn_pin: LPN, tim: T) -> Result<Self, Error<P::Error>> {
+        Ok(Vl53l8cx { 
+            temp_buffer: [0; VL53L8CX_TEMPORARY_BUFFER_SIZE],
+            offset_data: [0; VL53L8CX_OFFSET_BUFFER_SIZE],
+            xtalk_data: [0; VL53L8CX_XTALK_BUFFER_SIZE],
+            streamcount: 0,
+            data_read_size: 0,
+            is_auto_stop_enabled: false,
+            lpn_pin: lpn_pin,
+            bus: Vl53l8cxSPI::new(spi),
+            tim: tim,
+            chunk_size: SPI_CHUNK_SIZE
+        })
     }
 
     #[allow(dead_code)]

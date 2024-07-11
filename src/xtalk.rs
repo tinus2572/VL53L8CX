@@ -3,9 +3,9 @@ use consts::*;
 use buffers::*;
 use utils::*;
 
-use crate::{buffers, consts, utils, BlockHeader, BusOperation, Error, Vl53l8cx};
+use crate::{buffers, consts, utils, BlockHeader, BusOperation, Error, Vl53l8cx, OutputPin, DelayNs};
 
-impl<B: BusOperation> Vl53l8cx<B> {
+impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     #[allow(dead_code)]
     fn poll_for_answer_xtalk(&mut self, address: u16, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;

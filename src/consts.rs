@@ -182,7 +182,17 @@ pub const VL53L8CX_USE_RAW_FORMAT: u8 = 0;
  */
 pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 1;
 
-pub const DEFAULT_I2C_BUFFER_LEN: usize = 32;
+/**
+ * Define the max chunk size of the written/read data for I2C/SPI transmission
+ */
+pub const I2C: bool = true;
+pub const SPI: bool = false;
+pub const BUS: bool = I2C;
+pub const CHUNK_SIZE: usize = if BUS == SPI { SPI_CHUNK_SIZE } else { I2C_CHUNK_SIZE };
+#[allow(dead_code)]
+pub const I2C_CHUNK_SIZE: usize = 32;
+#[allow(dead_code)]
+pub const SPI_CHUNK_SIZE: usize = 4096;
 
 
 /**
