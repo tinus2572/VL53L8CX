@@ -22,7 +22,6 @@ impl<P: I2c> Vl53l8cxI2C<P> {
 
 impl<P: I2c> BusOperation for Vl53l8cxI2C<P> {
     type Error = P::Error;
-
     #[inline]
     fn read(&mut self, rbuf: &mut [u8]) -> Result<(), Self::Error> {
         self.i2c.read(self.address, rbuf)?;
@@ -57,9 +56,7 @@ impl<P: SpiDevice> Vl53l8cxSPI<P> {
 }
 
 impl<P: SpiDevice> BusOperation for Vl53l8cxSPI<P> {
-
     type Error = P::Error;
-
     #[inline]
     fn read(&mut self, rbuf: &mut [u8]) -> Result<(), Self::Error> {
         self.spi.read(rbuf)?;

@@ -45,7 +45,7 @@ use embedded_hal_bus::i2c::RefCellDevice;
 
 fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
-    writeln!(tx, "\x1B[2J").unwrap();
+    writeln!(tx, "\x1B[2H").unwrap();
 
     writeln!(tx, "VL53L8A1 Simple Ranging demo application\n").unwrap();
     writeln!(tx, "Cell Format :\n").unwrap();
@@ -182,15 +182,17 @@ fn main() -> ! {
     sensor.set_detection_thresholds_enable(1).unwrap();
 
     sensor.set_resolution(resolution).unwrap();
+    sensor.set_frequency_hz(30).unwrap();
     sensor.start_ranging().unwrap();
 
     write_results(&mut tx, &results, WIDTH);
     
     loop {
-        while !sensor.check_data_ready().unwrap() {} // Wait for data to be ready
+        // while !sensor.check_data_ready().unwrap() {} // Wait for data to be ready
         wfi();
         results = sensor.get_ranging_data().unwrap(); // Get and parse the result data
         write_results(&mut tx, &results, WIDTH); // Print the result to the output
+
     }
 } 
 

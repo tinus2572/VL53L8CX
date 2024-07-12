@@ -279,8 +279,8 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     pub fn read_from_register(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
             let mut read_size: usize;
-            for i in (0..size).step_by(CHUNK_SIZE) {
-                read_size = if size - i > CHUNK_SIZE { CHUNK_SIZE } else { size - i };
+            for i in (0..size).step_by(self.chunk_size) {
+                read_size = if size - i > self.chunk_size { self.chunk_size } else { size - i };
                 let a: u8 = (reg + i as u16 >> 8) as u8;
                 let b: u8 = (reg + i as u16 & 0xFF) as u8; 
                 self.bus.write_read(&[a, b], &mut self.temp_buffer[i..i+read_size]).map_err(Error::Bus)?;
@@ -299,9 +299,10 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     pub fn write_multi_to_register(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
         let size = wbuf.len();
         let mut write_size: usize;
-        let mut tmp: [u8; CHUNK_SIZE] = [0; CHUNK_SIZE];
-        for i in (0..size).step_by(CHUNK_SIZE-2) {
-            write_size = if size - i > CHUNK_SIZE-2 { CHUNK_SIZE-2 } else { size - i };
+
+        let mut tmp: [u8; 4096] = [0; 4096];
+        for i in (0..size).step_by(self.chunk_size-2) {
+            write_size = if size - i > self.chunk_size-2 { self.chunk_size-2 } else { size - i };
             tmp[0] = (reg + i as u16 >> 8) as u8;
             tmp[1] = (reg + i as u16 & 0xFF) as u8;
             tmp[2..2+write_size].copy_from_slice(&wbuf[i..i+write_size]);
@@ -312,10 +313,10 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
    
     pub fn write_multi_to_register_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
         let mut write_size: usize;
-        let mut tmp: [u8; CHUNK_SIZE] = [0; CHUNK_SIZE];
+        let mut tmp: [u8; 4096] = [0; 4096];
         
-        for i in (0..size).step_by(CHUNK_SIZE-2) {
-            write_size = if size - i > CHUNK_SIZE-2 { CHUNK_SIZE-2 } else { size - i };
+        for i in (0..size).step_by(self.chunk_size-2) {
+            write_size = if size - i > self.chunk_size-2 { self.chunk_size-2 } else { size - i };
             tmp[0] = (reg + i as u16 >> 8) as u8;
             tmp[1] = (reg + i as u16 & 0xFF) as u8;
             tmp[2..2+write_size].copy_from_slice(&self.temp_buffer[i..i+write_size]);

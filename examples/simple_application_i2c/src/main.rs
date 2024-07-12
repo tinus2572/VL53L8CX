@@ -33,13 +33,14 @@ use stm32f4xx_hal::{
 use stm32f4xx_hal::{
     pac::I2C1,
     i2c::{I2c as StmI2c, I2c1, Mode}};
-use embedded_hal_bus::i2c::RefCellDevice;
+use embedded_hal_bus::i2c::RefCellDevice;    
 
 fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
-    writeln!(tx, "\x1B[2J").unwrap();
+    writeln!(tx, "\x1B[2H").unwrap();
 
     writeln!(tx, "VL53L8A1 Simple Ranging demo application\n").unwrap();
+
     writeln!(tx, "Cell Format :\n").unwrap();
     writeln!(
         tx, 
@@ -87,7 +88,7 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
 }
 
-const WIDTH: usize = 4;
+const WIDTH: usize = 8;
 
 #[entry]
 fn main() -> ! {
@@ -139,6 +140,7 @@ fn main() -> ! {
 
     sensor_top.init_sensor(address).unwrap(); 
     sensor_top.set_resolution(resolution).unwrap();
+    sensor_top.set_frequency_hz(30).unwrap();
     sensor_top.start_ranging().unwrap();
 
     write_results(&mut tx, &results, WIDTH);
