@@ -81,15 +81,13 @@ pub const VL53L8CX_TARGET_ORDER_STRONGEST: u8 = 2;
 pub const VL53L8CX_RANGING_MODE_CONTINUOUS: u8 = 1;
 pub const VL53L8CX_RANGING_MODE_AUTONOMOUS: u8 = 3;
 
-// The default power mode is VL53L8CX_POWER_MODE_WAKEUP. User can choose two
-// different modes to save power consumption when is the device is not used:
-// - VL53L8CX_POWER_MODE_SLEEP: This mode retains the firmware and the configuration. 
-// It is recommended when the device needs to quickly wake-up.
-// - VL53L8CX_POWER_MODE_DEEP_SLEEP: This mode clears all memory, by consequence the firmware, the configuration and the calibration are lost. 
-// It is recommended when the device sleeps during a long time as it consumes a very low current consumption.
+// The default power mode is VL53L8CX_POWER_MODE_WAKEUP. User can choose two different modes to save power consumption when is the device is not used:
+// - VL53L8CX_POWER_MODE_SLEEP: This mode retains the firmware and the configuration. It is recommended when the device needs to quickly wake-up.
+// - VL53L8CX_POWER_MODE_DEEP_SLEEP: This mode clears all memory, by consequence the firmware, the configuration and the calibration are lost. It is recommended when the device sleeps during a long time as it consumes a very low current consumption.
 // Both modes can be changed using function set_power_mode().
 pub const VL53L8CX_POWER_MODE_SLEEP: u8 = 0;
 pub const VL53L8CX_POWER_MODE_WAKEUP: u8 = 1;
+pub const VL53L8CX_POWER_MODE_DEEP_SLEEP: u8 = 2;
 
 // Inner Macro for API. Not for user, only for development.
 pub const VL53L8CX_DCI_FREQ_HZ: u16 = 0x5458;
@@ -150,7 +148,7 @@ pub const VL53L8CX_USE_RAW_FORMAT: u8 = 0;
 
 // The macro below is used to define the number of target per zone sent through I2C. 
 // This value can be changed by user, in order to tune I2C transaction, and also the total memory size (a lower number of target per zone means a lower RAM). The value must be between 1 and 4.
-pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 1;
+pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 2;
 
 // Define the max chunk size of the written/read data for I2C/SPI transmission
 #[allow(dead_code)]

@@ -71,7 +71,12 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         if self.temp_buffer[0] == 0x4 {
             power_mode = VL53L8CX_POWER_MODE_WAKEUP;
         } else if self.temp_buffer[0] == 0x2 {
-            power_mode = VL53L8CX_POWER_MODE_SLEEP;
+            self.read_from_register(0x000f, 1)?;
+            if self.temp_buffer[0] == 0x43 {
+                power_mode = VL53L8CX_POWER_MODE_DEEP_SLEEP;
+            } else {
+                power_mode = VL53L8CX_POWER_MODE_SLEEP;
+            }
         } else {
             return Err(Error::Other);
         }
@@ -88,15 +93,30 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     #[allow(dead_code)]
     pub fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
         let current_power_mode: u8 = self.get_power_mode()?;
+        let mut stored_mode: u8 = 0;
         if power_mode != current_power_mode {
             if power_mode == VL53L8CX_POWER_MODE_WAKEUP {
                 self.write_to_register(0x7fff, 0x00)?;
                 self.write_to_register(0x09, 0x04)?;
+                self.read_from_register(0x000f, 1)?;
+                if self.temp_buffer[0] == 0x43 {
+                    stored_mode = self.temp_buffer[0];
+                    self.write_to_register(0x000f, 0x40)?;
+                }
                 self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
+                if stored_mode == 0x43 {
+                    self.init()?;
+                }
+
             } else if power_mode == VL53L8CX_POWER_MODE_SLEEP {
                 self.write_to_register(0x7fff, 0x00)?;
                 self.write_to_register(0x09, 0x02)?;
-                self.poll_for_answer(1, 0, 0x06, 0x01, 1)?;
+                self.poll_for_answer(1, 0, 0x06, 0x01, 0)?;
+            } else if power_mode == VL53L8CX_POWER_MODE_DEEP_SLEEP {
+                self.write_to_register(0x7fff, 0x00)?;
+                self.write_to_register(0x09, 0x02)?;
+                self.poll_for_answer(1, 0, 0x06, 0x01, 0)?;
+                self.write_to_register(0x000f, 0x43)?;
             } else {
                 return Err(Error::Other);
             }
