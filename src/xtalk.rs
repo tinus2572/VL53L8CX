@@ -6,7 +6,6 @@ use utils::*;
 use crate::{buffers, consts, utils, BlockHeader, BusOperation, Error, Vl53l8cx, OutputPin, DelayNs};
 
 impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
-    #[allow(dead_code)]
     fn poll_for_answer_xtalk(&mut self, address: u16, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
         while timeout <= 200 {
@@ -24,7 +23,6 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Err(Error::Timeout)
     }
 
-    #[allow(dead_code)]
     fn program_output_config(&mut self) -> Result<(), Error<B::Error>> {
         let mut header_config: [u32; 2] = [0, 0];
         let resolution = self.get_resolution()?;
@@ -99,8 +97,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Returns
     /// 
     /// * `xtalk_margin` : Xtalk margin in kcps/spads.
-    #[allow(dead_code)]
-    fn get_xtalk_margin(&mut self) -> Result<u32, Error<B::Error>> {
+    pub fn get_xtalk_margin(&mut self) -> Result<u32, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_XTALK_CFG, 16)?;
         let mut xtalk_margin: [u32; 1] = [0];
         from_u8_to_u32(&self.temp_buffer[..4], &mut xtalk_margin);
@@ -114,8 +111,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `xtalk_margin` : New Xtalk margin in kcps/spads. Min value is 0 kcps/spads, and max is 10.000 kcps/spads
-    #[allow(dead_code)]
-    fn set_xtalk_margin(&mut self, xtalk_margin: u32) -> Result<(), Error<B::Error>> {
+    pub fn set_xtalk_margin(&mut self, xtalk_margin: u32) -> Result<(), Error<B::Error>> {
         if xtalk_margin > 10000 {
             return Err(Error::InvalidParam);
         }
@@ -134,8 +130,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// * `reflectance_percent` : Target reflectance in percent. This value is include between 1 and 99%. For a better efficiency, ST recommends a 3% target reflectance.
     /// * `nb_samples` : Nb of samples used for calibration. A higher number of samples means a higher accuracy, but it increases the calibration time. Minimum is 1 and maximum is 16.
     /// * `distance_mm` : Target distance in mm. The minimum allowed distance is 600mm, and maximum is 3000mm. The target must stay in Full FOV, so short distance are easier for calibration.
-    #[allow(dead_code)]
-    fn calibrate_xtalk(&mut self, reflectance_percent: u16, nb_samples: u8, distance_mm: u16) -> Result<(), Error<B::Error>> {
+    pub fn calibrate_xtalk(&mut self, reflectance_percent: u16, nb_samples: u8, distance_mm: u16) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
         let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
@@ -225,8 +220,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Returns
     /// 
     /// `xtalk_data` : Buffer with a size defined by macro VL53L8CX_XTALK_SIZE.
-    #[allow(dead_code)]
-    fn get_caldata_xtalk(&mut self) -> Result<[u8; VL53L8CX_XTALK_BUFFER_SIZE], Error<B::Error>> {
+    pub fn get_caldata_xtalk(&mut self) -> Result<[u8; VL53L8CX_XTALK_BUFFER_SIZE], Error<B::Error>> {
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
         let mut xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
         let resolution = self.get_resolution()?;
@@ -250,8 +244,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// `xtalk_data` : Buffer with a size defined by macro VL53L8CX_XTALK_SIZE.
-    #[allow(dead_code)]
-    fn set_caldata_xtalk(&mut self, xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE]) -> Result<(), Error<B::Error>> {
+    pub fn set_caldata_xtalk(&mut self, xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE]) -> Result<(), Error<B::Error>> {
         let resolution = self.get_resolution()?;
         self.xtalk_data.copy_from_slice(&xtalk_data);
         self.set_resolution(resolution)?;

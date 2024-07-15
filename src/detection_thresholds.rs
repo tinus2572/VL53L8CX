@@ -6,7 +6,6 @@ use crate::{consts, utils, BusOperation, Vl53l8cx, Error, OutputPin, DelayNs};
 
 /// Structure DetectionThresholds contains a single threshold. This structure  is never used alone, it must be used as an array of 64 thresholds (defined by macro VL53L8CX_NB_THRESHOLDS).
 #[repr(C)]
-#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct DetectionThresholds {
     pub param_low_thresh: i32,
@@ -57,7 +56,6 @@ fn from_thresholds_to_u8(src: &[DetectionThresholds], dst: &mut [u8]) {
 
 impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
-    #[allow(dead_code)]
     /// This function allows indicating if the detection thresholds are enabled.
     /// 
     /// # Return
@@ -75,7 +73,6 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `enabled` : Set to 1 to enable, or 0 to disable thresholds.
-    #[allow(dead_code)]
     pub fn set_detection_thresholds_enable(&mut self, enabled: u8) -> Result<(), Error<B::Error>> {
         let mut grp_global_config: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
         let mut tmp: [u8; 1] = [0];
@@ -101,7 +98,6 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// * `thresholds` : Array of 64 thresholds.
-    #[allow(dead_code)]
     pub fn get_detection_thresholds(&mut self) -> Result<[DetectionThresholds; VL53L8CX_NB_THRESHOLDS], Error<B::Error>> {
         let mut thresholds: [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] = [DetectionThresholds::new(); VL53L8CX_NB_THRESHOLDS];
         
@@ -138,7 +134,6 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `thresholds` :  Array of 64 thresholds.
-    #[allow(dead_code)]
     pub fn set_detection_thresholds(&mut self, thresholds: &mut [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] ) -> Result<(), Error<B::Error>> {
         for i in 0..VL53L8CX_NB_THRESHOLDS {
             if thresholds[i].measurement == VL53L8CX_DISTANCE_MM {
@@ -178,7 +173,6 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Returns
     /// 
     /// * `auto_stop` :  Pointer of auto-stop feature, 0 disabled
-    #[allow(dead_code)]
     pub fn get_detection_thresholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
         let auto_stop: u8 = self.temp_buffer[0x03];
@@ -190,7 +184,6 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `auto_stop` :  Pointer of auto-stop feature, 0 disabled (default) or 1 enabled.     
-    #[allow(dead_code)]
     pub fn set_detection_thresholds_auto_stop(&mut self, auto_stop: u8) -> Result<(), Error<B::Error>> {
         let tmp: [u8; 1] = [auto_stop];
         self.dci_replace_data(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;

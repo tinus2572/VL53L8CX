@@ -3,10 +3,10 @@ use crate::VL53L8CX_CONFIGURATION_SIZE;
 use crate::VL53L8CX_NB_TARGET_PER_ZONE;
 
 /// Inner internal number of targets.
-pub const VL53L8CX_FW_NBTAR_RANGING: u8 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 2 } else { VL53L8CX_NB_TARGET_PER_ZONE as u8 };
+pub(crate) const VL53L8CX_FW_NBTAR_RANGING: u8 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 2 } else { VL53L8CX_NB_TARGET_PER_ZONE as u8 };
 
 /// This buffer contains the VL53L8CX firmware (MM1.8)
-pub const  VL53L8CX_FIRMWARE: [u8; 0x15000] = [
+pub(crate) const  VL53L8CX_FIRMWARE: [u8; 0x15000] = [
    0xe0, 0x00, 0x03, 0x08,
    0xe0, 0x00, 0x0a, 0xc8,
    0xe0, 0x00, 0x05, 0x08,
@@ -21515,7 +21515,7 @@ pub const  VL53L8CX_FIRMWARE: [u8; 0x15000] = [
  ];
 
 /// This buffer contains the VL53L8CX default configuration.
-pub const VL53L8CX_DEFAULT_CONFIGURATION: [u8; VL53L8CX_CONFIGURATION_SIZE as usize] = [
+pub(crate) const VL53L8CX_DEFAULT_CONFIGURATION: [u8; VL53L8CX_CONFIGURATION_SIZE as usize] = [
    0x54, 0x50, 0x00, 0x80,
    0x00, 0x04, 0x04, 0x04,
    0x00, 0x00, 0x08, 0x08,
@@ -21762,7 +21762,7 @@ pub const VL53L8CX_DEFAULT_CONFIGURATION: [u8; VL53L8CX_CONFIGURATION_SIZE as us
  ];
 
 /// This buffer contains the VL53L8CX default Xtalk data.
-pub const VL53L8CX_DEFAULT_XTALK: [u8; VL53L8CX_XTALK_BUFFER_SIZE as usize] = [
+pub(crate) const VL53L8CX_DEFAULT_XTALK: [u8; VL53L8CX_XTALK_BUFFER_SIZE as usize] = [
    0x9f, 0xd8, 0x00, 0xc0,
    0x03, 0x20, 0x09, 0x60,
    0x0b, 0x08, 0x08, 0x17,
@@ -21960,7 +21960,7 @@ pub const VL53L8CX_DEFAULT_XTALK: [u8; VL53L8CX_XTALK_BUFFER_SIZE as usize] = [
  ];
 
 /// This buffer is used to get NVM data.
-pub const VL53L8CX_GET_NVM_CMD: [u8; 40] = [
+pub(crate) const VL53L8CX_GET_NVM_CMD: [u8; 40] = [
    0x54, 0x00, 0x00, 0x40,
    0x9E, 0x14, 0x00, 0xC0,
    0x9E, 0x20, 0x01, 0x40,
@@ -21975,8 +21975,7 @@ pub const VL53L8CX_GET_NVM_CMD: [u8; 40] = [
 ];
 
 /// Command used to get Xtalk calibration data
-#[allow(dead_code)]
-pub const VL53L8CX_GET_XTALK_CMD: [u8; 72] = [
+pub(crate) const VL53L8CX_GET_XTALK_CMD: [u8; 72] = [
    0x54, 0x00, 0x00, 0x40,
    0x9F, 0xD8, 0x00, 0xC0,
    0x9F, 0xE4, 0x01, 0x40,
@@ -21998,13 +21997,11 @@ pub const VL53L8CX_GET_XTALK_CMD: [u8; 72] = [
 ];
 
 /// Inner internal number of targets.
-#[allow(dead_code)]
-pub const VL53L8CX_FW_NBTAR_XTALK: u8 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 2 } else { VL53L8CX_NB_TARGET_PER_ZONE as u8 };
+pub(crate) const VL53L8CX_FW_NBTAR_XTALK: u8 = if VL53L8CX_NB_TARGET_PER_ZONE == 1 { 2 } else { VL53L8CX_NB_TARGET_PER_ZONE as u8 };
 
 
 /// Command used to get run Xtalk calibration
-#[allow(dead_code)]
-pub const VL53L8CX_CALIBRATE_XTALK: [u8; 984] = [
+pub(crate) const VL53L8CX_CALIBRATE_XTALK: [u8; 984] = [
    0x54, 0x50, 0x00, 0x80,
    0x00, 0x04, 0x08, 0x08,
    0x00, 0x00, 0x04, 0x04,

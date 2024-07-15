@@ -63,8 +63,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `power_mode` : Current power mode. The value of this is equal to 0 if the sensor is in low power, (VL53L8CX_POWER_MODE_SLEEP), or 1 if sensor is in standard mode (VL53L8CX_POWER_MODE_WAKEUP).
-    #[allow(dead_code)]
-    pub fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
+        pub fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
         let power_mode: u8;
         self.write_to_register(0x7fff, 0x00)?;
         self.read_from_register(0x009, 1)?;    
@@ -90,8 +89,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `power_mode` : Selected power mode (VL53L8CX_POWER_MODE_SLEEP or VL53L8CX_POWER_MODE_WAKEUP)
-    #[allow(dead_code)]
-    pub fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
+        pub fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
         let current_power_mode: u8 = self.get_power_mode()?;
         let mut stored_mode: u8 = 0;
         if power_mode != current_power_mode {
@@ -131,8 +129,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `is_sync_pin_enabled` : false if the pin is disabled, or true if the pin is enabled.
-    #[allow(dead_code)]
-    pub fn get_external_sync_pin_enable(&mut self) -> Result<bool, Error<B::Error>> {
+        pub fn get_external_sync_pin_enable(&mut self) -> Result<bool, Error<B::Error>> {
         let is_sync_pin_enabled: bool;
         self.dci_read_data(VL53L8CX_DCI_SYNC_PIN, 4)?;
 
@@ -150,8 +147,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `enable_sync_pin` : Set the value to 1 to enable the sync pin, or 0 to disable it.
-    #[allow(dead_code)]
-    pub fn set_external_sync_pin_enable(&mut self, enable_sync_pin: u8) -> Result<(), Error<B::Error>> {
+        pub fn set_external_sync_pin_enable(&mut self, enable_sync_pin: u8) -> Result<(), Error<B::Error>> {
         let mut tmp: [u32; 1] = [0];
         self.read_from_register(VL53L8CX_DCI_SYNC_PIN, 4)?;
         from_u8_to_u32(&self.temp_buffer[3..3+4], &mut tmp);
@@ -174,8 +170,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `repeat_count` : Number of frames before next temperature compensation. Set to 0 to disable the feature (default configuration).
-    #[allow(dead_code)]
-    pub fn get_vhv_repeat_count(&mut self) -> Result<u32, Error<B::Error>> {
+        pub fn get_vhv_repeat_count(&mut self) -> Result<u32, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_VHV_CONFIG, 16)?;
         let mut repeat_count: [u32; 1] = [0];
         from_u8_to_u32(&self.temp_buffer[4..8], &mut repeat_count);
@@ -187,8 +182,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `repeat_count` : Number of frames between temperature compensation. Set to 0 to disable the feature (default configuration).
-    #[allow(dead_code)]
-    pub fn set_vhv_repeat_count(&mut self, repeat_count: u32) -> Result<(), Error<B::Error>> {
+        pub fn set_vhv_repeat_count(&mut self, repeat_count: u32) -> Result<(), Error<B::Error>> {
         let mut tmp: [u8;4] = [0;4];
         from_u32_to_u8(&[repeat_count], &mut tmp);
         self.dci_replace_data(VL53L8CX_DCI_VHV_CONFIG, 16, &tmp, 4, 0x4)?;
@@ -200,8 +194,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `target_order` : Contains the target order.
-    #[allow(dead_code)]
-    pub fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
+        pub fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
         let target_order: u8;
         self.dci_read_data(VL53L8CX_DCI_TARGET_ORDER, 4)?;
         target_order = self.temp_buffer[0];
@@ -214,8 +207,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `target_order` : Required target order.\
-    #[allow(dead_code)]
-    pub fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
+        pub fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
         if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
             self.dci_replace_data(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order], 1, 0x0)?;
         } else {
@@ -229,8 +221,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `sharpener_percent` : Contains the sharpener in percent.
-    #[allow(dead_code)]
-    pub fn get_sharpener_percent(&mut self) -> Result<u32, Error<B::Error>> {
+        pub fn get_sharpener_percent(&mut self) -> Result<u32, Error<B::Error>> {
         let sharpener_percent: u32;
         self.dci_read_data(VL53L8CX_DCI_SHARPENER, 16)?;
         sharpener_percent = self.temp_buffer[0xD] as u32* 100 / 255;
@@ -243,8 +234,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `sharpener_percent` : Value between 0 (disabled) and 99%.
-    #[allow(dead_code)]
-    pub fn set_sharpener_percent(&mut self, sharpener_percent: u32) -> Result<(), Error<B::Error>> {
+        pub fn set_sharpener_percent(&mut self, sharpener_percent: u32) -> Result<(), Error<B::Error>> {
         let sharpener: u32;
         if sharpener_percent >= 100 {
             return Err(Error::InvalidParam);
@@ -260,8 +250,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `time_ms`: Contains integration time in ms.
-    #[allow(dead_code)]
-    pub fn get_integration_time(&mut self) -> Result<u32, Error<B::Error>> {
+        pub fn get_integration_time(&mut self) -> Result<u32, Error<B::Error>> {
         let mut time_ms: [u32; 1] = [0];
         self.dci_read_data(VL53L8CX_DCI_INT_TIME, 20)?;
         from_u8_to_u32(&self.temp_buffer[..4], &mut time_ms);
@@ -276,8 +265,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `time_ms` : Contains the integration time in ms. For all resolutions and frequency, the minimum value is 2ms, and the maximum is 1000ms.
-    #[allow(dead_code)]
-    pub fn set_integration_time(&mut self, integration_time_ms: u32) -> Result<(), Error<B::Error>> {
+        pub fn set_integration_time(&mut self, integration_time_ms: u32) -> Result<(), Error<B::Error>> {
         let mut integration: u32 = integration_time_ms;
 
         // Integration time must be between 2ms and 1000ms 
@@ -300,8 +288,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `ranging_mode` : current ranging mode
-    #[allow(dead_code)]
-    pub fn get_ranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
+        pub fn get_ranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
         let ranging_mode: u8;
         self.dci_read_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
         if self.temp_buffer[1] == 1 {
@@ -317,8 +304,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `ranging_mode` : Use macros VL53L8CX_RANGING_MODE_CONTINUOUS, VL53L8CX_RANGING_MODE_CONTINUOUS.
-    #[allow(dead_code)]
-    pub fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
+        pub fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
         let mut single_range: [u32; 1] = [0];
         self.dci_read_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
 
@@ -347,8 +333,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `frequency_hz` : Contains the ranging frequency in Hz.
-    #[allow(dead_code)]
-    pub fn get_frequency_hz(&mut self) -> Result<u8, Error<B::Error>> {
+        pub fn get_frequency_hz(&mut self) -> Result<u8, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_FREQ_HZ, 4)?;
         let frequency_hz: u8 = self.temp_buffer[0x01];
 
@@ -362,8 +347,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// * `frequency_hz` : Contains the ranging frequency in Hz.
     ///  - For 4x4, min and max allowed values are : 1 to 60
     ///  - For 8x8, min and max allowed values are : 1 to 15
-    #[allow(dead_code)]
-    pub fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
+        pub fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
         let tmp: [u8; 1] = [frequency_hz];
         self.dci_replace_data(VL53L8CX_DCI_FREQ_HZ, 4, &tmp, 1, 0x01)?;
 

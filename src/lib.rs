@@ -112,6 +112,8 @@
 //! ```
 
 #![no_std]
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 pub mod accessors;
 pub mod buffers;
@@ -122,16 +124,13 @@ pub mod motion_indicator;
 pub mod utils;
 pub mod xtalk;
 
-#[allow(unused_imports)]
 use accessors::*;
 use buffers::*;
 use bus_operation::*;
 use consts::*;
-#[allow(unused_imports)]
 use detection_thresholds::*;
 use motion_indicator::*;
 use utils::*;
-#[allow(unused_imports)]
 use xtalk::*;
 
 use embedded_hal::{
@@ -152,18 +151,18 @@ bitfield! {
 }
 
 pub struct Vl53l8cx<B: BusOperation, LPN: OutputPin, T: DelayNs> {
-    pub temp_buffer: [u8;  VL53L8CX_TEMPORARY_BUFFER_SIZE],
-    pub offset_data: [u8;  VL53L8CX_OFFSET_BUFFER_SIZE],
-    pub xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE],
-    pub streamcount: u8,
-    pub data_read_size: u32,
-    pub is_auto_stop_enabled: bool,
+    pub(crate) temp_buffer: [u8;  VL53L8CX_TEMPORARY_BUFFER_SIZE],
+    pub(crate) offset_data: [u8;  VL53L8CX_OFFSET_BUFFER_SIZE],
+    pub(crate) xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE],
+    pub(crate) streamcount: u8,
+    pub(crate) data_read_size: u32,
+    pub(crate) is_auto_stop_enabled: bool,
 
-    pub lpn_pin: LPN,
+    pub(crate) lpn_pin: LPN,
     
-    pub chunk_size: usize,
-    pub bus: B,
-    pub tim: T
+    pub(crate) chunk_size: usize,
+    pub(crate) bus: B,
+    pub(crate) tim: T
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -248,7 +247,7 @@ impl ResultsData {
 impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// Inner function, not available outside this file. 
     /// This function is used to wait for an answer from VL53L8CX sensor.
-    pub fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
+    pub(crate) fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
 
         while timeout <= 200 {
@@ -268,7 +267,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     /// Inner function, not available outside this file. 
     /// This function is used to wait for the MCU to boot.
-    pub fn poll_for_mcu_boot(&mut self) -> Result<(), Error<B::Error>> {
+    pub(crate) fn poll_for_mcu_boot(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
 
         while timeout <= 500 {
@@ -289,7 +288,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     /// Inner function, not available outside this file. 
     /// This function is used to set the offset data gathered from NVM.
-    pub fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub(crate) fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut signal_grid: [u32; 64] = [0; 64];
         let mut range_grid: [i16; 64] = [0; 64];
         let dss_4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x00, 0x08, 0x10, 0x10, 0x07];
@@ -342,7 +341,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     /// Inner function, not available outside this file. 
     /// This function is used to set the Xtalk data from generic configuration, or user's calibration.
-    pub fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub(crate) fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let res4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x17, 0x08, 0x10, 0x10, 0x07];
         let dss_4x4: [u8; 8] = [0x00, 0x78, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08];
         let profile_4x4: [u8; 4] = [0xA0, 0xFC, 0x01, 0x00];
@@ -390,7 +389,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// * `reg` : specifies internal address register to be read.
     /// * `size` : number of bytes to be read.
-    pub fn read_from_register(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
+    pub(crate) fn read_from_register(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
             let mut read_size: usize;
             for i in (0..size).step_by(self.chunk_size) {
                 read_size = if size - i > self.chunk_size { self.chunk_size } else { size - i };
@@ -408,7 +407,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// * `reg` : specifies internal address register to be overwritten.
     /// * `val` : value to be written.
-    pub fn write_to_register(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
+    pub(crate) fn write_to_register(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
         let a: u8 = (reg >> 8) as u8;
         let b: u8 = (reg & 0xFF) as u8; 
         self.bus.write(&[a, b, val]).map_err(Error::Bus)?;
@@ -423,7 +422,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// * `reg` : specifies internal address register to be overwritten.
     /// * `wbuf` : value to be written.
-    pub fn write_multi_to_register(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
+    pub(crate) fn write_multi_to_register(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
         let size = wbuf.len();
         let mut write_size: usize;
 
@@ -446,7 +445,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// * `reg` : specifies internal address register to be overwritten.
     /// * `size` : number of bytes to be written.
-    pub fn write_multi_to_register_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
+    pub(crate) fn write_multi_to_register_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
         let mut write_size: usize;
         let mut tmp: [u8; 4096] = [0; 4096];
         
@@ -465,19 +464,19 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `ms` : milliseconds to wait.
-    pub fn delay(&mut self, ms: u32) {
+    pub(crate) fn delay(&mut self, ms: u32) {
         self.tim.delay_ms(ms);
     }
 
     /// PowerOn the sensor
-    pub fn on(&mut self) -> Result<(), Error<B::Error>>{
+    pub(crate) fn on(&mut self) -> Result<(), Error<B::Error>>{
         self.lpn_pin.set_high().unwrap();
         self.delay(10);
         Ok(())
     }
 
     /// PowerOff the sensor
-    pub fn off(&mut self) -> Result<(), Error<B::Error>>{
+    pub(crate) fn off(&mut self) -> Result<(), Error<B::Error>>{
         self.lpn_pin.set_low().unwrap();
         self.delay(10);
         Ok(())
@@ -507,7 +506,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// `index` : Index of required value.
     /// `data_size` : This field must be the structure or array size
-    pub fn dci_read_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
+    pub(crate) fn dci_read_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let read_size: usize = data_size + 12; 
         let mut cmd: [u8; 12] = [
             0x00, 0x00, 0x00, 0x00,
@@ -548,7 +547,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// `index` : Index of required value.
     /// `data_size` : This field must be the structure or array size
-    pub fn dci_write_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
+    pub(crate) fn dci_write_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut headers: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0f, 0x05, 0x01,
             ((data_size + 8) >> 8) as u8,
@@ -599,7 +598,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// `new_data` : Contains the new fields.
     /// `new_data_size` : New data size.
     /// `new_data_pos` : New data position in temp_buffer.
-    pub fn dci_replace_data(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
+    pub(crate) fn dci_replace_data(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
         self.dci_read_data(index, data_size)?;
         self.temp_buffer[new_data_pos..new_data_pos+new_data_size].copy_from_slice(&new_data[..new_data_size]);
         self.dci_write_data(index, data_size)?;
@@ -848,8 +847,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     /// This function stops the ranging session. 
     /// It must be used when the sensor streams, after calling start_ranging().
-    #[allow(dead_code)]
-    pub fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
+        pub fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
         let mut auto_flag_stop: [u32; 1] = [0];
 
@@ -926,7 +924,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Return
     /// 
-    /// `results`` : VL53L8 results structure.
+    /// `results` : VL53L8 results structure.
     pub fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
         let mut result: ResultsData = ResultsData::new();
         let mut msize: usize;
