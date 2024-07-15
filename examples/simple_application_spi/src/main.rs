@@ -138,6 +138,7 @@ fn main() -> ! {
     sensor.init_sensor().unwrap();
     sensor.set_resolution(resolution).unwrap();
     sensor.set_frequency_hz(30).unwrap();
+    
     sensor.start_ranging().unwrap();
 
 

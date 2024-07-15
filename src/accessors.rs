@@ -326,7 +326,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             self.temp_buffer[1] = 1;
             self.temp_buffer[3] = 3;
             single_range[0] = 0;
-        } else if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
+        } else if ranging_mode == VL53L8CX_RANGING_MODE_AUTONOMOUS {
             self.temp_buffer[1] = 3;
             self.temp_buffer[3] = 2;
             single_range[0] = 1;

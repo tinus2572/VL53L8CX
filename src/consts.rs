@@ -148,7 +148,7 @@ pub const VL53L8CX_USE_RAW_FORMAT: u8 = 0;
 
 // The macro below is used to define the number of target per zone sent through I2C. 
 // This value can be changed by user, in order to tune I2C transaction, and also the total memory size (a lower number of target per zone means a lower RAM). The value must be between 1 and 4.
-pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 2;
+pub const VL53L8CX_NB_TARGET_PER_ZONE: u32 = 1;
 
 // Define the max chunk size of the written/read data for I2C/SPI transmission
 #[allow(dead_code)]

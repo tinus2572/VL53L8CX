@@ -27,7 +27,7 @@ use embedded_hal_bus::spi::{NoDelay, RefCellDevice};
 
 fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
 
-    writeln!(tx, "\x1B[2J").unwrap();
+    writeln!(tx, "\x1B[2H").unwrap();
 
     writeln!(tx, "VL53L8A1 Simple Ranging demo application\n").unwrap();
     writeln!(tx, "Cell Format :\n").unwrap();
@@ -45,14 +45,14 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
     ).unwrap();
 
     for j in 0..width {
-        for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
+        for _ in 0..width { write!(tx, "+----------").unwrap(); } writeln!(tx, "+").unwrap();
         
         #[cfg(not(any(feature="VL53L8CX_DISABLE_DISTANCE_MM", feature="VL53L8CX_DISABLE_TARGET_STATUS")))]
         {
             for i in 0..width {
                 write!(
                     tx, 
-                    "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<2}\x1b[0m", 
+                    "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<4}\x1b[0m", 
                 dis=results.distance_mm[width*j+i], 
                 sta=results.target_status[width*j+i]
                 ).unwrap();
@@ -66,14 +66,14 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
                 if sig > 9999 { sig = 9999; }
                 write!(
                     tx, 
-                    "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<2}\x1b[0m", 
+                    "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<4}\x1b[0m", 
                     sig=sig, 
                     amb=results.ambient_per_spad[width*j+i]
                 ).unwrap();
             } write!(tx, "|\n").unwrap();
         }
     }
-    for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
+    for _ in 0..width { write!(tx, "+----------").unwrap(); } writeln!(tx, "+").unwrap();
 
 }
 
@@ -155,6 +155,7 @@ fn main() -> ! {
 
     sensor.init_sensor().unwrap();
 
+    // In this configuration it ranges as long as there is at least one zone that detects a target inside the window : cover the sensor with a piece of paper or put the sensor to the sky and it will stop ranging.
     let mut thresholds: [DetectionThresholds; VL53L8CX_NB_THRESHOLDS] = [DetectionThresholds::new(); VL53L8CX_NB_THRESHOLDS];
     for i in 0..resolution as usize {
         thresholds[i].zone_num = i as u8;
@@ -167,6 +168,7 @@ fn main() -> ! {
     sensor.set_detection_thresholds_enable(1).unwrap();
 
     sensor.set_resolution(resolution).unwrap();
+    sensor.set_frequency_hz(30).unwrap();
     sensor.start_ranging().unwrap();
 
     write_results(&mut tx, &results, WIDTH);
