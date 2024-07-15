@@ -30,7 +30,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         let resolution = self.get_resolution()?;
         let mut bh: BlockHeader;
         self.data_read_size = 0;
-        /* Enable mandatory output (meta and common data) */
+        // Enable mandatory output (meta and common data) 
         let output_bh_enable: [u32; 4] = [
             0x0001FFFF,
             0x00000000,
@@ -38,7 +38,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             0xC0000000
             ];
             
-            /* Send addresses of possible output */
+            // Send addresses of possible output 
         let mut output: [u32; 17] = [
             0x0000000D,
             0x54000040,
@@ -93,12 +93,12 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
        
         Ok(())
     }
-/**
- * @brief This function gets the Xtalk margin. This margin is used to increase
- * the Xtalk threshold. It can also be used to avoid false positives after the
- * Xtalk calibration. The default value is 50 kcps/spads.
- * @return (u32) xtalk_margin : Xtalk margin in kcps/spads.
- */
+
+    /// This function gets the Xtalk margin. This margin is used to increase the Xtalk threshold. It can also be used to avoid false positives after the Xtalk calibration. The default value is 50 kcps/spads.
+    /// 
+    /// # Returns
+    /// 
+    /// * `xtalk_margin` : Xtalk margin in kcps/spads.
     #[allow(dead_code)]
     fn get_xtalk_margin(&mut self) -> Result<u32, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_XTALK_CFG, 16)?;
@@ -108,13 +108,12 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         Ok(xtalk_margin[0])
     }
-    /**
- * @brief This function sets the Xtalk margin. This margin is used to increase
- * the Xtalk threshold. It can also be used to avoid false positives after the
- * Xtalk calibration. The default value is 50 kcps/spads.
- * @param (u32) xtalk_margin : New Xtalk margin in kcps/spads. Min value is
- * 0 kcps/spads, and max is 10.000 kcps/spads
- */
+    
+    /// This function sets the Xtalk margin. This margin is used to increase the Xtalk threshold. It can also be used to avoid false positives after the Xtalk calibration. The default value is 50 kcps/spads.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `xtalk_margin` : New Xtalk margin in kcps/spads. Min value is 0 kcps/spads, and max is 10.000 kcps/spads
     #[allow(dead_code)]
     fn set_xtalk_margin(&mut self, xtalk_margin: u32) -> Result<(), Error<B::Error>> {
         if xtalk_margin > 10000 {
@@ -126,19 +125,15 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         Ok(())
     }
-/**
- * @brief This function starts the VL53L8CX sensor in order to calibrate Xtalk.
- * This calibration is recommended is user wants to use a coverglass.
- * @param (u16) reflectance_percent : Target reflectance in percent. This
- * value is include between 1 and 99%. For a better efficiency, ST recommends a
- * 3% target reflectance.
- * @param (u8) nb_samples : Nb of samples used for calibration. A higher
- * number of samples means a higher accuracy, but it increases the calibration
- * time. Minimum is 1 and maximum is 16.
- * @param (u16) distance_mm : Target distance in mm. The minimum allowed
- * distance is 600mm, and maximum is 3000mm. The target must stay in Full FOV,
- * so short distance are easier for calibration.
- */
+
+    /// This function starts the VL53L8CX sensor in order to calibrate Xtalk.
+    /// This calibration is recommended is user wants to use a coverglass.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `reflectance_percent` : Target reflectance in percent. This value is include between 1 and 99%. For a better efficiency, ST recommends a 3% target reflectance.
+    /// * `nb_samples` : Nb of samples used for calibration. A higher number of samples means a higher accuracy, but it increases the calibration time. Minimum is 1 and maximum is 16.
+    /// * `distance_mm` : Target distance in mm. The minimum allowed distance is 600mm, and maximum is 3000mm. The target must stay in Full FOV, so short distance are easier for calibration.
     #[allow(dead_code)]
     fn calibrate_xtalk(&mut self, reflectance_percent: u16, nb_samples: u8, distance_mm: u16) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
@@ -148,7 +143,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         let mut distance: [u8;2] = [0,0];
         let samples: [u8;1] = [nb_samples];
         
-        /* Get initial configuration */
+        // Get initial configuration 
         let resolution = self.get_resolution()?;
         let frequency = self.get_frequency_hz()?;
         let sharpener_percent = self.get_sharpener_percent()?;
@@ -157,7 +152,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         let xtalk_margin = self.get_xtalk_margin()?;
         let ranging_mode = self.get_ranging_mode()?;
 
-        /* Check input arguments validity */
+        // Check input arguments validity 
         if reflectance_percent < 1 || reflectance_percent > 99
             || distance_mm < 600 || distance_mm > 3000
             || nb_samples < 1 || nb_samples > 16 {
@@ -165,32 +160,32 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         }
         self.set_resolution(VL53L8CX_RESOLUTION_8X8)?;
 
-        /* Send Xtalk calibration buffer */
+        // Send Xtalk calibration buffer 
         self.temp_buffer[..984].copy_from_slice(&VL53L8CX_CALIBRATE_XTALK);
         self.write_multi_to_register_temp_buffer(0x2c28, 984)?;
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
 
-        /* Format input argument */
+        // Format input argument 
         from_u16_to_u8(&[reflectance_percent*16], &mut reflectance);
         from_u16_to_u8(&[distance_mm*4], &mut distance);
 
-        /* Update required fields */
+        // Update required fields 
         self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &distance, 2, 0)?;
         self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &reflectance, 2, 2)?;
         self.dci_replace_data(VL53L8CX_DCI_CAL_CFG, 8, &samples, 1, 4)?;
 
-        /* Program output for Xtalk calibration */
+        // Program output for Xtalk calibration 
         self.program_output_config()?;
 
-        /* Start ranging session */
+        // Start ranging session 
         self.write_multi_to_register(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
 
-        /* Wait for end of calibration */
+        // Wait for end of calibration 
         while timeout <= 400 {
             self.read_from_register(0, 4)?;
             if self.temp_buffer[0] != VL53L8CX_STATUS_ERROR {
-                /* Coverglass too good for Xtalk calibration */
+                // Coverglass too good for Xtalk calibration 
                 if self.temp_buffer[2] >= 0x7f && self.temp_buffer[3] & 0x80 >> 7 == 1 {
                     self.xtalk_data.copy_from_slice(&VL53L8CX_DEFAULT_XTALK);
                 }
@@ -201,7 +196,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             }
         }
 
-        /* Save Xtalk data into the Xtalk buffer */
+        // Save Xtalk data into the Xtalk buffer 
         self.temp_buffer[..72].copy_from_slice(&VL53L8CX_GET_XTALK_CMD);
         self.write_multi_to_register_temp_buffer(0x2fb8, 72)?;
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
@@ -209,11 +204,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.xtalk_data[..VL53L8CX_XTALK_BUFFER_SIZE-8].copy_from_slice(&self.temp_buffer[8..VL53L8CX_XTALK_BUFFER_SIZE]);
         self.xtalk_data[VL53L8CX_XTALK_BUFFER_SIZE-8..].copy_from_slice(&footer);
 
-        /* Reset default buffer */
+        // Reset default buffer 
         self.write_multi_to_register(0x2c34, &VL53L8CX_DEFAULT_CONFIGURATION)?;
         self.poll_for_answer_xtalk(VL53L8CX_UI_CMD_STATUS, 3)?;
 
-        /* Reset initial configuration */
+        // Reset initial configuration 
         self.set_resolution(resolution)?;
         self.set_frequency_hz(frequency)?;
         self.set_integration_time(integration_time_ms)?;
@@ -224,12 +219,12 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         Ok(())
     }
-/**
- * @brief This function gets the Xtalk buffer. The buffer is available after
- * using the function vl53l8cx_calibrate_xtalk().
- * @return ([u8; VL53L8CX_XTALK_BUFFER_SIZE]) xtalk_data : Buffer with a size defined by
- * macro VL53L8CX_XTALK_SIZE.
- */
+
+    /// This function gets the Xtalk buffer. The buffer is available after using the function calibrate_xtalk().
+    /// 
+    /// # Returns
+    /// 
+    /// `xtalk_data` : Buffer with a size defined by macro VL53L8CX_XTALK_SIZE.
     #[allow(dead_code)]
     fn get_caldata_xtalk(&mut self) -> Result<[u8; VL53L8CX_XTALK_BUFFER_SIZE], Error<B::Error>> {
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
@@ -248,12 +243,13 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         Ok(xtalk_data)
     }
-/**
- * @brief This function sets the Xtalk buffer. This function can be used to
- * override default Xtalk buffer.
- * @param ([u8; VL53L8CX_XTALK_BUFFER_SIZE]) xtalk_data : Buffer with a size defined by
- * macro VL53L8CX_XTALK_SIZE.
- */
+
+    /// This function sets the Xtalk buffer. 
+    /// This function can be used to override default Xtalk buffer.
+    /// 
+    /// # Arguments
+    /// 
+    /// `xtalk_data` : Buffer with a size defined by macro VL53L8CX_XTALK_SIZE.
     #[allow(dead_code)]
     fn set_caldata_xtalk(&mut self, xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE]) -> Result<(), Error<B::Error>> {
         let resolution = self.get_resolution()?;

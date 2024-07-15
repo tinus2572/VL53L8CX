@@ -4,9 +4,7 @@ use utils::*;
 
 use crate::{consts, utils, BusOperation, Error, Vl53l8cx, OutputPin, DelayNs};
 
-/**
- * @brief Motion indicator internal configuration structure.
- */
+/// Motion indicator internal configuration structure.
 #[repr(C)]
 #[allow(dead_code)]
 pub struct MotionConfiguration {
@@ -152,32 +150,25 @@ pub fn from_motion_configuration_to_u8(src: &MotionConfiguration, dst: &mut [u8]
 }
 
 impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
-    /**
-     * @brief This function is used to initialized the motion indicator. By default,
-     * indicator is programmed to monitor movements between 400mm and 1500mm.
-     * @param (MotionConfiguration) motion_config : Structure
-     * containing the initialized motion configuration.
-     * @param (u8) resolution : Wanted resolution, defined by macros
-     * VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
-     */
+    /// This function is used to initialized the motion indicator. By default, indicator is programmed to monitor movements between 400mm and 1500mm.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `motion_config` : Structure containing the initialized motion configuration.
+    /// * `resolution` : Wanted resolution, defined by macros VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
     #[allow(dead_code)]
     fn motion_indicator_init(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut motion_config = MotionConfiguration::new();
         self.motion_indicator_set_resolution(&mut motion_config, resolution)?;
         Ok(())
     }
-/**
- * @brief This function can be used to change the working distance of motion
- * indicator. By default, indicator is programmed to monitor movements between
- * 400mm and 1500mm.
- * @param (&mut MotionConfiguration) motion_config : Structure
- * containing the initialized motion configuration.
- * @param (u16) distance_min_mm : Minimum distance for indicator (min value
- * 400mm, max 4000mm).
- * @param (u16) distance_max_mm : Maximum distance for indicator (min value
- * 400mm, max 4000mm).
- * VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
- */
+
+    /// This function can be used to change the working distance of motion indicator. By default, indicator is programmed to monitor movements between 400mm and 1500mm.
+    /// # Aguments
+    /// 
+    /// * `motion_config` : Structure containing the initialized motion configuration.
+    /// * `distance_min_mm` : Minimum distance for indicator (min value 400mm, max 4000mm).
+    /// * `distance_max_mm` : Maximum distance for indicator (min value 400mm, max 4000mm).
     #[allow(dead_code)]
     fn motion_indicator_set_distance_motion(&mut self, motion_config: &mut MotionConfiguration, distance_min_mm: u16, distance_max_mm: u16) -> Result<(), Error<B::Error>> {
         let mut tmp: f64;
@@ -196,13 +187,13 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         Ok(())
     }
-/**
- * @brief This function is used to update the internal motion indicator map.
- * @param (MotionConfiguration) motion_config : Structure
- * containing the initialized motion configuration.
- * @param (u8) resolution : Wanted SCI resolution, defined by macros
- * VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
- */
+
+    /// This function is used to update the internal motion indicator map.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `motion_config` : Structure containing the initialized motion configuration.
+    /// * `resolution` : Wanted SCI resolution, defined by macros VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
     #[allow(dead_code)]
     fn motion_indicator_set_resolution(&mut self, motion_config: &mut MotionConfiguration, resolution: u8) -> Result<(), Error<B::Error>> {
         if resolution == VL53L8CX_RESOLUTION_4X4 {

@@ -1,3 +1,116 @@
+
+//! # VL53L8CX drivers and example applications
+//! 
+//! This crate provides a platform-agnostic driver for the ST VL53L8CX proximity sensor driver.
+//! The [datasheet](https://www.st.com/en/imaging-and-photonics-solutions/VL53L8CX.html) and the [schematics](https://www.st.com/resource/en/schematic_pack/x-nucleo-53l8a1-schematic.pdf) provide all necessary information.
+//! This driver was built using the [embedded-hal](https://docs.rs/embedded-hal/latest/embedded_hal/) traits.
+//! The [stm32f4xx-hal](https://docs.rs/stm32f4xx-hal/latest/stm32f4xx_hal/) crate is also mandatory.
+//! Ensure that the hardware abstraction layer of your microcontroller implements the embedded-hal traits.
+//! 
+//! ## Instantiating
+//! 
+//! Create an instance of the driver with the `new_i2c` or `new_spi` associated function, by passing i2c and address instances or an spi (SpiDevice) instance.
+//!  
+//! ### Common setup:
+//! ```rust
+//! let dp = Peripherals::take().unwrap();
+//! let rcc = dp.RCC.constrain();
+//! let clocks = rcc.cfgr.use_hse(8.MHz()).sysclk(48.MHz()).freeze();
+//! let tim_top = dp.TIM1.delay_ms(&clocks);
+//! 
+//! let gpioa = dp.GPIOA.split();
+//! let gpiob = dp.GPIOB.split();
+//! 
+//! let _pwr_pin = gpioa.pa7.into_push_pull_output_in_state(High);
+//! let lpn_pin = gpiob.pb0.into_push_pull_output_in_state(High);
+//! let tx_pin = gpioa.pa2.into_alternate();
+//!     
+//! let mut tx = dp.USART2.tx(
+    //! tx_pin,
+    //! Config::default()
+    //! .baudrate(460800.bps())
+    //! .wordlength_8()
+    //! .parity_none(),
+    //! &clocks).unwrap();
+//! ```
+//! 
+//! #### I2C setup:
+//! ```rust    
+//! let scl = gpiob.pb8;
+//! let sda = gpiob.pb9;
+//! 
+//! let i2c = I2c1::new(
+    //! dp.I2C1,
+    //! (scl, sda),
+    //! Mode::Standard{frequency:400.kHz()},
+    //! &clocks);
+//!     
+//! let i2c_bus = RefCell::new(i2c);
+//! let address = VL53L8CX_DEFAULT_I2C_ADDRESS;
+//!     
+//! let mut sensor_top = Vl53l8cx::new_i2c(
+    //! RefCellDevice::new(&i2c_bus), 
+        //! lpn_pin,
+        //! tim_top
+    //! ).unwrap();
+//! 
+//! sensor_top.init_sensor(address).unwrap(); 
+//! sensor_top.start_ranging().unwrap();
+//! ```
+//! 
+//! #### SPI setup:
+//! ```rust
+//! let sclk = gpiob.pb3.into_alternate().internal_pull_up(true);
+//! let miso = gpiob.pb4.into_alternate();
+//! let mosi = gpiob.pb5.into_alternate();
+//! let cs_pin = gpiob.pb6.into_push_pull_output_in_state(High);
+//! 
+//! let spi = Spi::new(
+    //! dp.SPI1,
+    //! (sclk, miso, mosi),
+    //! MODE_3,
+    //! 3.MHz(),
+    //! &clocks);
+//!     
+//! let spi = RefCell::new(spi);
+//! let spi = RefCellDevice::new_no_delay(&spi, cs_pin).unwrap();
+//! 
+//! let mut sensor_top = Vl53l8cx::new_spi(
+    //! spi, 
+    //! lpn_pin,
+    //! tim_top
+//! ).unwrap();
+//! 
+//! sensor.init_sensor().unwrap();
+//! sensor.start_ranging().unwrap();
+//! ```
+
+//! ### Common loop:
+//! ```rust
+//! loop {
+    //! while !sensor_top.check_data_ready().unwrap() {} // Wait for data to be ready
+    //! let results = sensor_top.get_ranging_data().unwrap(); // Get and parse the result data
+    //! write_results(&mut tx, &results, WIDTH); // Print the result to the output
+//! }    
+//! ```
+//! 
+//! ## Multiple instances with I2C
+//! 
+//! The default I2C address for this device (cf. datasheet) is 0x52.
+//! 
+//! If multiple sensors are used on the same I2C bus, consider setting off
+//! all the instances, then initializating them one by one to set up unique I2C  addresses.
+//! 
+//! ```rust
+//! sensor_top.off().unwrap();
+//! sensor_left.off().unwrap();
+//! sensor_right.off().unwrap();
+
+//! sensor_top.init_sensor(address_top).unwrap(); 
+//! sensor_left.init_sensor(address_left).unwrap(); 
+//! sensor_right.init_sensor(address_right).unwrap(); 
+//! ```
+
 #![no_std]
 
 pub mod accessors;
@@ -65,46 +178,44 @@ pub enum Error<B> {
     CheckSumFail
 }
 
-/**
- * @brief Structure ResultsData contains the ranging results of
- * VL53L8CX. If user wants more than 1 target per zone, the results can be split
- * into 2 sub-groups :
- * - Per zone results. These results are common to all targets (ambient_per_spad
- * , nb_target_detected and nb_spads_enabled).
- * - Per target results : These results are different relative to the detected
- * target (signal_per_spad, range_sigma_mm, distance_mm, reflectance,
- * target_status).
- */
+ /// Structure ResultsData contains the ranging results of
+ /// VL53L8CX. If user wants more than 1 target per zone, 
+ /// the results can be split into 2 sub-groups :
+ /// - Per zone results. These results are common to all targets 
+ /// (ambient_per_spad, nb_target_detected and nb_spads_enabled).
+ /// - Per target results : These results are different relative to the detected target 
+ /// (signal_per_spad, range_sigma_mm, distance_mm, reflectance,
+ /// target_status).
 #[repr(C)]
 pub struct ResultsData {
-  /* Internal sensor silicon temperature */
+  // Internal sensor silicon temperature 
     pub silicon_temp_degc: i8, 
     #[cfg(not(feature="VL53L8CX_DISABLE_AMBIENT_PER_SPAD"))]
-  /* Ambient noise in kcps/spads */
+  // Ambient noise in kcps/spads 
   pub ambient_per_spad: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
     #[cfg(not(feature="VL53L8CX_DISABLE_NB_TARGET_DETECTED"))]
-  /* Number of valid target detected for 1 zone */
+  // Number of valid target detected for 1 zone 
   pub nb_target_detected: [u8; VL53L8CX_RESOLUTION_8X8 as usize],
     #[cfg(not(feature="VL53L8CX_DISABLE_NB_SPADS_ENABLED"))]
-  /* Number of spads enabled for this ranging */
+  // Number of spads enabled for this ranging 
     pub nb_spads_enabled: [u32; VL53L8CX_RESOLUTION_8X8 as usize],
     #[cfg(not(feature="VL53L8CX_DISABLE_SIGNAL_PER_SPAD"))]
-  /* Signal returned to the sensor in kcps/spads */
+  // Signal returned to the sensor in kcps/spads 
     pub signal_per_spad: [u32; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_RANGE_SIGMA_MM"))]
-  /* Sigma of the current distance in mm */
+  // Sigma of the current distance in mm 
     pub range_sigma_mm: [u16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_DISTANCE_MM"))]
-  /* Measured distance in mm */
+  // Measured distance in mm 
     pub distance_mm: [i16; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_REFLECTANCE_PERCENT"))]
-  /* Estimated reflectance in percent */
+  // Estimated reflectance in percent 
     pub reflectance: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_TARGET_STATUS"))]
-  /* Status indicating the measurement validity (5 & 9 means ranging OK)*/
+  // Status indicating the measurement validity (5 & 9 means ranging OK)
     pub target_status: [u8; (VL53L8CX_RESOLUTION_8X8 as usize) * (VL53L8CX_NB_TARGET_PER_ZONE as usize)],
     #[cfg(not(feature="VL53L8CX_DISABLE_MOTION_INDICATOR"))]
-  /* Motion detector results */
+  // Motion detector results 
     pub motion_indicator: MotionIndicator
 } 
 
@@ -135,10 +246,8 @@ impl ResultsData {
 }
 
 impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
-    /**
-     * @brief Inner function, not available outside this file. This function is used
-     * to wait for an answer from VL53L8CX sensor.
-     */
+    /// Inner function, not available outside this file. 
+    /// This function is used to wait for an answer from VL53L8CX sensor.
     pub fn poll_for_answer(&mut self, size: usize, pos: u8, reg: u16, mask: u8, expected_val: u8) -> Result<(), Error<B::Error>> {
         let mut timeout: u8 = 0;
 
@@ -157,10 +266,8 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Err(Error::Timeout)
     }
 
-/*
- * Inner function, not available outside this file. This function is used to
- * wait for the MCU to boot.
- */
+    /// Inner function, not available outside this file. 
+    /// This function is used to wait for the MCU to boot.
     pub fn poll_for_mcu_boot(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
 
@@ -179,10 +286,9 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         }
         Err(Error::Timeout)
     }
-/**
- * @brief Inner function, not available outside this file. This function is used
- * to set the offset data gathered from NVM.
- */
+
+    /// Inner function, not available outside this file. 
+    /// This function is used to set the offset data gathered from NVM.
     pub fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut signal_grid: [u32; 64] = [0; 64];
         let mut range_grid: [i16; 64] = [0; 64];
@@ -191,7 +297,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         self.temp_buffer[..VL53L8CX_OFFSET_BUFFER_SIZE].copy_from_slice(&self.offset_data);
 
-        /* Data extrapolation is required for 4X4 offset */
+        // Data extrapolation is required for 4X4 offset 
         if resolution == VL53L8CX_RESOLUTION_4X4 {
             self.temp_buffer[0x10..0x10+dss_4x4.len()].copy_from_slice(&dss_4x4);
             swap_buffer(&mut self.temp_buffer, VL53L8CX_OFFSET_BUFFER_SIZE);
@@ -233,10 +339,9 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         Ok(())
     }   
-/**
- * @brief Inner function, not available outside this file. This function is used
- * to set the Xtalk data from generic configuration, or user's calibration.
- */
+
+    /// Inner function, not available outside this file. 
+    /// This function is used to set the Xtalk data from generic configuration, or user's calibration.
     pub fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let res4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x17, 0x08, 0x10, 0x10, 0x07];
         let dss_4x4: [u8; 8] = [0x00, 0x78, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08];
@@ -245,7 +350,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         self.temp_buffer[..VL53L8CX_XTALK_BUFFER_SIZE].copy_from_slice(&self.xtalk_data);
 
-        /* Data extrapolation is required for 4X4 Xtalk */
+        // Data extrapolation is required for 4X4 Xtalk 
         if resolution == VL53L8CX_RESOLUTION_4X4 {
             self.temp_buffer[0x8..0x8 + res4x4.len()].copy_from_slice(&res4x4);
             self.temp_buffer[0x020..0x020 + dss_4x4.len()].copy_from_slice(&dss_4x4);
@@ -277,6 +382,14 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }  
 
+    /// Utility function to read data.
+    /// `size` bytes of data are read starting from `reg`
+    /// and written in temp_buffer.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `reg` : specifies internal address register to be read.
+    /// * `size` : number of bytes to be read.
     pub fn read_from_register(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {
             let mut read_size: usize;
             for i in (0..size).step_by(self.chunk_size) {
@@ -288,6 +401,13 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }
 
+    /// Utility function to write data.
+    /// `val` is written in `reg`.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `reg` : specifies internal address register to be overwritten.
+    /// * `val` : value to be written.
     pub fn write_to_register(&mut self, reg: u16, val: u8) -> Result<(), Error<B::Error>> {
         let a: u8 = (reg >> 8) as u8;
         let b: u8 = (reg & 0xFF) as u8; 
@@ -296,6 +416,13 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }
     
+    /// Utility function to write data.
+    /// The content of `wbuf` is written in registers starting from `reg`.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `reg` : specifies internal address register to be overwritten.
+    /// * `wbuf` : value to be written.
     pub fn write_multi_to_register(&mut self, reg: u16, wbuf: &[u8]) -> Result<(), Error<B::Error>> {
         let size = wbuf.len();
         let mut write_size: usize;
@@ -311,6 +438,14 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }
    
+    /// Utility function to write data.
+    /// The first `size` bytes of temp_buffer are written 
+    /// in registers starting from `reg`.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `reg` : specifies internal address register to be overwritten.
+    /// * `size` : number of bytes to be written.
     pub fn write_multi_to_register_temp_buffer(&mut self, reg: u16, size: usize) -> Result<(), Error<B::Error>> {       
         let mut write_size: usize;
         let mut tmp: [u8; 4096] = [0; 4096];
@@ -325,25 +460,30 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }
 
+    /// Utility function to wait.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `ms` : milliseconds to wait.
     pub fn delay(&mut self, ms: u32) {
         self.tim.delay_ms(ms);
     }
 
+    /// PowerOn the sensor
     pub fn on(&mut self) -> Result<(), Error<B::Error>>{
         self.lpn_pin.set_high().unwrap();
         self.delay(10);
         Ok(())
     }
 
+    /// PowerOff the sensor
     pub fn off(&mut self) -> Result<(), Error<B::Error>>{
         self.lpn_pin.set_low().unwrap();
         self.delay(10);
         Ok(())
     }
     
-    /**
-     * @brief Check if the VL53L8CX sensor is alive(responding to I2C communication).
-    */
+    /// Check if the VL53L8CX sensor is alive (responding to communication).
     pub fn is_alive(&mut self) -> Result<(), Error<B::Error>> {
         self.write_to_register(0x7fff, 0x00)?;
         self.read_from_register(0, 2)?;
@@ -357,15 +497,16 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }
     
-/**
- * @brief This function can be used to read 'extra data' from DCI. Using a known
- * index, the function fills the casted structure passed in argument.
- * Please note that the FW only accept data of 32 bits. So data can
- * only have a size of 32, 64, 96, 128, bits ....
- * @param (u16) index : Index of required value.
- * @param (usize)data_size : This field must be the structure or array size
- * (using sizeof() function).
- */
+    /// This function can be used to read 'extra data' from DCI. 
+    /// Using a known `index`, the function fills the first `data_size` bytes 
+    /// of temp_buffer.
+    /// Please note that the FW only accept data of 32 bits. 
+    /// So data can only have a size of 32, 64, 96, 128, bits ....
+    /// 
+    /// # Arguments
+    /// 
+    /// `index` : Index of required value.
+    /// `data_size` : This field must be the structure or array size
     pub fn dci_read_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let read_size: usize = data_size + 12; 
         let mut cmd: [u8; 12] = [
@@ -381,15 +522,15 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         cmd[2] = ((data_size & 0xff0) >> 4) as u8;
         cmd[3] = ((data_size & 0xf) << 4) as u8;
         
-        /* Request data reading from FW */
+        // Request data reading from FW 
         self.write_multi_to_register(VL53L8CX_UI_CMD_END - 11, &cmd)?;
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xFF, 0x03)?;
         
-        /* Read new data sent (4 bytes header + data_size + 8 bytes footer) */
+        // Read new data sent (4 bytes header + data_size + 8 bytes footer) 
         self.read_from_register(VL53L8CX_UI_CMD_START, read_size)?;
         swap_buffer(&mut self.temp_buffer, read_size);
         
-        /* Copy data from FW into input structure (-4 bytes to remove header) */
+        // Copy data from FW into input structure (-4 bytes to remove header) 
         for i in 0..data_size {
             self.temp_buffer[i] = self.temp_buffer[i+4];
         }
@@ -397,15 +538,16 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }   
     
-/**
- * @brief This function can be used to write 'extra data' to DCI. The data can
- * be simple data, or casted structure.
- * Please note that the FW only accept data of 32 bits. So data can
- * only have a size of 32, 64, 96, 128, bits ..
- * @param (u16) index : Index of required value.
- * @param (usize)data_size : This field must be the structure or array size
- * (using sizeof() function).
- */
+    /// This function can be used to write 'extra data' from DCI. 
+    /// The function write the first `data_size` bytes 
+    /// of temp_buffer at `index`.
+    /// Please note that the FW only accept data of 32 bits. 
+    /// So data can only have a size of 32, 64, 96, 128, bits ....
+    /// 
+    /// # Arguments
+    /// 
+    /// `index` : Index of required value.
+    /// `data_size` : This field must be the structure or array size
     pub fn dci_write_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut headers: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0f, 0x05, 0x01,
@@ -415,7 +557,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         
         let address: u16 = VL53L8CX_UI_CMD_END - (data_size as u16 + 12) + 1;
 
-        /* Check if cmd buffer is large enough */
+        // Check if cmd buffer is large enough 
         if (data_size + 12) > VL53L8CX_TEMPORARY_BUFFER_SIZE {
             return Err(Error::Other);
         } else {
@@ -424,17 +566,17 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             headers[2] = ((data_size & 0xff0) >> 4) as u8;
             headers[3] = ((data_size & 0xf) << 4) as u8;
 
-            /* Copy data from structure to FW format (+4 bytes to add header) */
+            // Copy data from structure to FW format (+4 bytes to add header) 
             swap_buffer(&mut self.temp_buffer, data_size);
             for i in 0..data_size {
                 self.temp_buffer[data_size-1 - i+4] = self.temp_buffer[data_size-1 - i];
             }
 
-            /* Add headers and footer */
+            // Add headers and footer 
             self.temp_buffer[..headers.len()].copy_from_slice(&headers);
             self.temp_buffer[data_size+4..data_size+4+footer.len()].copy_from_slice(&footer);
 
-            /* Send data to FW */
+            // Send data to FW 
             self.write_multi_to_register_temp_buffer(address, data_size + 12)?;
             self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
 
@@ -444,18 +586,19 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }   
     
-/**
- * @brief This function can be used to replace 'extra data' in DCI. The data can
- * be simple data, or casted structure.
- * Please note that the FW only accept data of 32 bits. So data can
- * only have a size of 32, 64, 96, 128, bits ..
- * @param (u16) index : Index of required value.
- * @param (usize) data_size : This field must be the structure or array size
- * (using sizeof() function).
- * @param (&[u8]) new_data : Contains the new fields.
- * @param (usize) new_data_size : New data size.
- * @param (usize) new_data_pos : New data position into the buffer.
- */
+    /// This function can be used to replace 'extra data' from DCI. 
+    /// The function write the first `data_size` bytes 
+    /// of temp_buffer at `index`.
+    /// Please note that the FW only accept data of 32 bits. 
+    /// So data can only have a size of 32, 64, 96, 128, bits ....
+    /// 
+    /// # Arguments
+    /// 
+    /// `index` : Index of required value.
+    /// `data_size` : This field must be the structure or array size
+    /// `new_data` : Contains the new fields.
+    /// `new_data_size` : New data size.
+    /// `new_data_pos` : New data position in temp_buffer.
     pub fn dci_replace_data(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
         self.dci_read_data(index, data_size)?;
         self.temp_buffer[new_data_pos..new_data_pos+new_data_size].copy_from_slice(&new_data[..new_data_size]);
@@ -464,11 +607,10 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }   
 
-/**
- * @brief Mandatory function used to initialize the sensor. This function must
- * be called after a power on, to load the firmware into the VL53L8CX. It takes
- * a few hundred milliseconds.
- */
+    /// Mandatory function used to initialize the sensor. 
+    /// This function must be called after a power on, 
+    /// to load the firmware into the VL53L8CX. 
+    /// It takes a few hundred milliseconds.
     pub fn init(&mut self) -> Result<(), Error<B::Error>> {
         let pipe_ctrl: [u8; 4] = [VL53L8CX_NB_TARGET_PER_ZONE as u8, 0x00, 0x01, 0x00];
         let single_range: [u32; 1] = [0x01];
@@ -496,25 +638,25 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.write_to_register(0x000A, 0x01)?;
         self.delay(100);
 
-	    /* Wait for sensor booted (several ms required to get sensor ready ) */
+	    // Wait for sensor booted (several ms required to get sensor ready ) 
         self.write_to_register(0x7fff, 0x00)?;
         self.poll_for_answer(1, 0, 0x06, 0xff, 1)?;
 
         self.write_to_register(0x000E, 0x01)?;
         self.write_to_register(0x7fff, 0x02)?;
 
-        /* Enable FW access */
+        // Enable FW access 
         self.write_to_register(0x7fff, 0x01)?;
         self.write_to_register(0x06, 0x01)?;
         self.poll_for_answer(1, 0, 0x21, 0xFF, 0x4)?;
 
         self.write_to_register(0x7fff, 0x00)?;
 
-        /* Enable host access to GO1 */
+        // Enable host access to GO1 
         self.read_from_register(0x7fff, 1)?;
         self.write_to_register(0x0C, 0x01)?;
 
-        /* Power ON status */
+        // Power ON status 
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x101, 0x00)?;
         self.write_to_register(0x102, 0x00)?;
@@ -531,7 +673,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.write_to_register(0x219, 0x00)?;
         self.write_to_register(0x21B, 0x00)?;
 
-        /* Wake up MCU */
+        // Wake up MCU 
         self.write_to_register(0x7fff, 0x00)?;
         self.read_from_register(0x7fff, 1)?;
 
@@ -539,7 +681,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         // self.write_to_register(0x20, 0x07)?;
         // self.write_to_register(0x20, 0x06)?;
 
-        /* Download FW into VL53L8CX */
+        // Download FW into VL53L8CX 
         self.write_to_register(0x7fff, 0x09)?;
         self.write_multi_to_register(0, &VL53L8CX_FIRMWARE[0..0x8000])?;
         self.write_to_register(0x7fff, 0x0a)?;
@@ -549,7 +691,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         self.write_to_register(0x7fff, 0x01)?;
 
-        /* Check if FW correctly downloaded */
+        // Check if FW correctly downloaded 
         self.write_to_register(0x7fff, 0x01)?;
         self.write_to_register(0x06, 0x03)?;
 
@@ -558,7 +700,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.read_from_register(0x7fff, 1)?;
         self.write_to_register(0x0C, 0x01)?;
 
-        /* Reset MCU and wait boot */
+        // Reset MCU and wait boot 
         self.write_to_register(0x7FFF, 0x00)?;
         self.write_to_register(0x114, 0x00)?;
         self.write_to_register(0x115, 0x00)?;
@@ -573,7 +715,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         self.write_to_register(0x7fff, 0x02)?;
 
-        /* Firmware checksum */
+        // Firmware checksum 
         self.read_from_register((0x812FFC & 0xFFFF) as u16, 4)?;
         swap_buffer(&mut self.temp_buffer, 4);
         from_u8_to_u32(&self.temp_buffer[..4], &mut crc_checksum);
@@ -581,7 +723,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             return Err(Error::CheckSumFail);
         }
 
-        /* Get offset NVM data and store them into the offset buffer */
+        // Get offset NVM data and store them into the offset buffer 
         self.write_multi_to_register(0x2fd8, &VL53L8CX_GET_NVM_CMD)?;
         self.poll_for_answer(4, 0, VL53L8CX_UI_CMD_STATUS, 0xff, 2)?;
 
@@ -589,11 +731,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.offset_data.copy_from_slice(&self.temp_buffer[..VL53L8CX_OFFSET_BUFFER_SIZE]);
         self.send_offset_data(VL53L8CX_RESOLUTION_4X4)?;
 
-        /* Set default Xtalk shape. Send Xtalk to sensor */
+        // Set default Xtalk shape. Send Xtalk to sensor 
         self.xtalk_data.copy_from_slice(&VL53L8CX_DEFAULT_XTALK);
         self.send_xtalk_data(VL53L8CX_RESOLUTION_4X4)?;
       
-        /* Send default configuration to VL53L8CX firmware */
+        // Send default configuration to VL53L8CX firmware 
         self.write_multi_to_register(0x2c34,&VL53L8CX_DEFAULT_CONFIGURATION)?;
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
         self.temp_buffer[..pipe_ctrl.len()].copy_from_slice(&pipe_ctrl);
@@ -609,10 +751,8 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }
 
-/**s
- * @brief This function starts a ranging session. When the sensor streams, host
- * cannot change settings 'on-the-fly'.
- */
+    /// This function starts a ranging session. 
+    /// When the sensor streams, host cannot change settings 'on-the-fly'.
     pub fn start_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let resolution: u8 = self.get_resolution()?;
         let mut tmp: [u16; 1] = [0];
@@ -650,7 +790,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         if !cfg!(feature = "VL53L8CX_DISABLE_TARGET_STATUS") { output_bh_enable[0] += 1024; }
         if !cfg!(feature = "VL53L8CX_DISABLE_MOTION_INDICATOR") { output_bh_enable[0] += 2048; }
         
-        /* Update data size */
+        // Update data size 
         for i in 0..12 {
             if output[i] == 0 || output_bh_enable[i/32] & (1 << (i%32)) == 0 {
                 continue;
@@ -681,23 +821,23 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         from_u32_to_u8(&output_bh_enable, &mut self.temp_buffer[..16]);
         self.dci_write_data(VL53L8CX_DCI_OUTPUT_ENABLES, 16)?;
         
-        /* Start xshut bypass (interrupt mode) */
+        // Start xshut bypass (interrupt mode) 
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x09, 0x05)?;
         self.write_to_register(0x7fff, 0x02)?;
 
-        /* Start ranging session */
+        // Start ranging session 
         self.write_multi_to_register(VL53L8CX_UI_CMD_END - (4-1), &cmd)?;
         self.poll_for_answer(4, 1, VL53L8CX_UI_CMD_STATUS, 0xff, 0x03)?;
 
-        /* Read ui range data content and compare if data size is the correct one */
+        // Read ui range data content and compare if data size is the correct one 
         self.dci_read_data(0x5440, 12)?;
         from_u8_to_u16(&self.temp_buffer[0x8..0x8+2], &mut tmp);
         if tmp[0] != self.data_read_size as u16 {   
             return Err(Error::Other);
         }
 
-        /* Ensure that there is no laser safety fault */
+        // Ensure that there is no laser safety fault 
         self.dci_read_data(0xe0c4, 8)?;
         if self.temp_buffer[0x6] != 0 {
             return Err(Error::Other);
@@ -706,10 +846,8 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(())
     }
 
-/**
- * @brief This function stops the ranging session. It must be used when the
- * sensor streams, after calling vl53l8cx_start_ranging().
- */
+    /// This function stops the ranging session. 
+    /// It must be used when the sensor streams, after calling start_ranging().
     #[allow(dead_code)]
     pub fn stop_ranging(&mut self) -> Result<(), Error<B::Error>> {
         let mut timeout: u16 = 0;
@@ -721,11 +859,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         if auto_flag_stop[0] != 0x4ff {
             self.write_to_register(0x7fff, 0x00)?;
 
-            /* Provoke MCU stop */
+            // Provoke MCU stop 
             self.write_to_register(0x15, 0x16)?;
             self.write_to_register(0x14, 0x01)?;
 
-            /* Poll for G02 status 0 MCU stop */
+            // Poll for G02 status 0 MCU stop 
             while self.temp_buffer[0] & (0x80 as u8) >> 7 == 0x00 && timeout <= 500 {
                 self.read_from_register(0x6, 1)?;
                 self.delay(10);
@@ -734,7 +872,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             }
         }
 
-        /* Check GO2 status 1 if status is still OK */
+        // Check GO2 status 1 if status is still OK 
         self.read_from_register(0x6, 1)?;
         if self.temp_buffer[0] & 0x80 != 0 {
             self.read_from_register(0x7, 1)?;
@@ -743,23 +881,25 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             }
         }
 
-        /* Undo MCU stop */
+        // Undo MCU stop 
         self.write_to_register(0x7fff, 0x00)?;
         self.write_to_register(0x14, 0x00)?;
         self.write_to_register(0x15, 0x00)?;
 
-        /* Stop xshut bypass */
+        // Stop xshut bypass 
         self.write_to_register(0x09, 0x04)?;
         self.write_to_register(0x7fff, 0x02)?;
 
         Ok(())
     }
-    /**
- * @brief This function checks if a new data is ready by polling I2C. If a new
- * data is ready, a flag will be raised.
- * @return (bool) isReady : Value is 0 if data
- * is not ready, or 1 if a new data is ready.
- */
+
+    /// This function checks if a new data is ready by polling I2C. 
+    /// If a new data is ready, a flag will be raised.
+    /// 
+    /// # Return
+    /// 
+    /// `isReady` : Value is false if data is not ready, 
+    /// or true if a new data is ready.
     pub fn check_data_ready(&mut self) -> Result<bool, Error<B::Error>> {
         let is_ready: bool;
         self.read_from_register(0, 4)?;
@@ -781,11 +921,12 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         Ok(is_ready)
     }
 
-/**
- * @brief This function gets the ranging data, using the selected output and the
- * resolution.
- * @return (ResultsData) results : VL53L5 results structure.
- */
+    /// This function gets the ranging data, 
+    /// using the selected output and the resolution.
+    /// 
+    /// # Return
+    /// 
+    /// `results`` : VL53L8 results structure.
     pub fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
         let mut result: ResultsData = ResultsData::new();
         let mut msize: usize;
@@ -797,7 +938,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.streamcount = self.temp_buffer[0];
         swap_buffer(&mut self.temp_buffer, self.data_read_size as usize);
 
-        /* Start conversion at position 16 to avoid headers */
+        // Start conversion at position 16 to avoid headers 
         let mut i: usize = 16;
         while i < self.data_read_size as usize {
 
@@ -881,7 +1022,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             }
         }
         if VL53L8CX_USE_RAW_FORMAT == 0 {
-            /* Convert data into their real format */
+            // Convert data into their real format 
             #[cfg(not(feature = "VL53L8CX_DISABLE_AMBIENT_PER_SPAD"))] {
                 for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
                     result.ambient_per_spad[i] /= 2048;
@@ -903,7 +1044,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
                 #[cfg(not(feature = "VL53L8CX_DISABLE_SIGNAL_PER_SPAD"))] {
                     result.signal_per_spad[i] /= 2048;   
                 }
-                /* Set target status to 255 if no target is detected for this zone */
+                // Set target status to 255 if no target is detected for this zone 
                 #[cfg(not(any(feature="VL53L8CX_DISABLE_DISTANCE_MM", feature="VL53L8CX_DISABLE_TARGET_STATUS")))] {
                     for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
                         if result.nb_target_detected[i] == 0 {
@@ -922,7 +1063,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             }
         }
         
-        /* Check if footer id and header id are matching. This allows to detect corrupted frames */
+        // Check if footer id and header id are matching. This allows to detect corrupted frames 
         header_id = (self.temp_buffer[8] as u16) << 8 & 0xff00;
         header_id |= (self.temp_buffer[9] as u16) & 0x00ff;
 
