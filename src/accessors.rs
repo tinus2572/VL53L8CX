@@ -340,8 +340,8 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `frequency_hz` : Contains the ranging frequency in Hz.
-    ///  - For 4x4, min and max allowed values are : [1;60]
-    ///  - For 8x8, min and max allowed values are : [1;15]
+    ///  - For 4x4, min and max allowed values are : 1 to 60
+    ///  - For 8x8, min and max allowed values are : 1 to 15
     #[allow(dead_code)]
     pub fn set_frequency_hz(&mut self, frequency_hz: u8) -> Result<(), Error<B::Error>> {
         let tmp: [u8; 1] = [frequency_hz];
