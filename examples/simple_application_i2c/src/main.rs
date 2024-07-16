@@ -56,14 +56,14 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
     ).unwrap();
 
     for j in 0..width {
-        for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
+        for _ in 0..width { write!(tx, "+----------").unwrap(); } writeln!(tx, "+").unwrap();
         
         #[cfg(not(any(feature="VL53L8CX_DISABLE_DISTANCE_MM", feature="VL53L8CX_DISABLE_TARGET_STATUS")))]
         {
             for i in 0..width {
                 write!(
                     tx, 
-                    "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<2}\x1b[0m", 
+                    "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<4}\x1b[0m", 
                 dis=results.distance_mm[width*j+i], 
                 sta=results.target_status[width*j+i]
                 ).unwrap();
@@ -77,18 +77,18 @@ fn write_results(tx: &mut Tx<USART2>, results: &ResultsData, width: usize) {
                 if sig > 9999 { sig = 9999; }
                 write!(
                     tx, 
-                    "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<2}\x1b[0m", 
+                    "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<4}\x1b[0m", 
                     sig=sig, 
                     amb=results.ambient_per_spad[width*j+i]
                 ).unwrap();
             } write!(tx, "|\n").unwrap();
         }
     }
-    for _ in 0..width { write!(tx, "+--------").unwrap(); } writeln!(tx, "+").unwrap();
+    for _ in 0..width { write!(tx, "+----------").unwrap(); } writeln!(tx, "+").unwrap();
 
 }
 
-const WIDTH: usize = 8;
+const WIDTH: usize = 4;
 
 #[entry]
 fn main() -> ! {

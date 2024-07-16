@@ -114,7 +114,6 @@ const VL53L8CX_MAX_RESULTS_SIZE: usize = 40
 
 // Macro VL53L8CX_TEMPORARY_BUFFER_SIZE can be used to know the size of the temporary buffer. 
 // The minimum size is 1024, and the maximum depends of the output configuration.
- 
 pub(crate) const VL53L8CX_TEMPORARY_BUFFER_SIZE: usize = 
 if VL53L8CX_MAX_RESULTS_SIZE < 1024 { 
     1024

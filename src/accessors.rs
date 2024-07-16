@@ -303,7 +303,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     ///
     /// # Arguments
     /// 
-    /// * `ranging_mode` : Use macros VL53L8CX_RANGING_MODE_CONTINUOUS, VL53L8CX_RANGING_MODE_CONTINUOUS.
+    /// * `ranging_mode` : Use macros VL53L8CX_RANGING_MODE_CONTINUOUS, VL53L8CX_RANGING_MODE_AUTONOMOUS.
         pub fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
         let mut single_range: [u32; 1] = [0];
         self.dci_read_data(VL53L8CX_DCI_RANGING_MODE, 8)?;

@@ -382,7 +382,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     }  
 
     /// Utility function to read data.
-    /// `size` bytes of data are read starting from `reg`
+    /// * `size` bytes of data are read starting from `reg`
     /// and written in temp_buffer.
     /// 
     /// # Arguments
@@ -401,7 +401,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     }
 
     /// Utility function to write data.
-    /// `val` is written in `reg`.
+    /// * `val` is written in `reg`.
     /// 
     /// # Arguments
     /// 
@@ -469,14 +469,14 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     }
 
     /// PowerOn the sensor
-    pub(crate) fn on(&mut self) -> Result<(), Error<B::Error>>{
+    pub fn on(&mut self) -> Result<(), Error<B::Error>>{
         self.lpn_pin.set_high().unwrap();
         self.delay(10);
         Ok(())
     }
 
     /// PowerOff the sensor
-    pub(crate) fn off(&mut self) -> Result<(), Error<B::Error>>{
+    pub fn off(&mut self) -> Result<(), Error<B::Error>>{
         self.lpn_pin.set_low().unwrap();
         self.delay(10);
         Ok(())
@@ -504,8 +504,8 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Arguments
     /// 
-    /// `index` : Index of required value.
-    /// `data_size` : This field must be the structure or array size
+    /// * `index` : Index of required value.
+    /// * `data_size` : This field must be the structure or array size
     pub(crate) fn dci_read_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let read_size: usize = data_size + 12; 
         let mut cmd: [u8; 12] = [
@@ -545,8 +545,8 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Arguments
     /// 
-    /// `index` : Index of required value.
-    /// `data_size` : This field must be the structure or array size
+    /// * `index` : Index of required value.
+    /// * `data_size` : This field must be the structure or array size
     pub(crate) fn dci_write_data(&mut self, index: u16, data_size: usize) -> Result<(), Error<B::Error>> {
         let mut headers: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0f, 0x05, 0x01,
@@ -593,11 +593,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Arguments
     /// 
-    /// `index` : Index of required value.
-    /// `data_size` : This field must be the structure or array size
-    /// `new_data` : Contains the new fields.
-    /// `new_data_size` : New data size.
-    /// `new_data_pos` : New data position in temp_buffer.
+    /// * `index` : Index of required value.
+    /// * `data_size` : This field must be the structure or array size
+    /// * `new_data` : Contains the new fields.
+    /// * `new_data_size` : New data size.
+    /// * `new_data_pos` : New data position in temp_buffer.
     pub(crate) fn dci_replace_data(&mut self, index: u16, data_size: usize, new_data: &[u8], new_data_size: usize, new_data_pos: usize) -> Result<(), Error<B::Error>> {
         self.dci_read_data(index, data_size)?;
         self.temp_buffer[new_data_pos..new_data_pos+new_data_size].copy_from_slice(&new_data[..new_data_size]);
@@ -896,7 +896,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Return
     /// 
-    /// `isReady` : Value is false if data is not ready, 
+    /// * `isReady` : Value is false if data is not ready, 
     /// or true if a new data is ready.
     pub fn check_data_ready(&mut self) -> Result<bool, Error<B::Error>> {
         let is_ready: bool;
@@ -924,7 +924,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Return
     /// 
-    /// `results` : VL53L8 results structure.
+    /// * `results` : VL53L8 results structure.
     pub fn get_ranging_data(&mut self) -> Result<ResultsData, Error<B::Error>> {
         let mut result: ResultsData = ResultsData::new();
         let mut msize: usize;
