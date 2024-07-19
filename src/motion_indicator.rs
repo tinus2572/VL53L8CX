@@ -151,7 +151,6 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Arguments
     /// 
-    /// * `motion_config` : Structure containing the initialized motion configuration.
     /// * `resolution` : Wanted resolution, defined by macros VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
     pub fn motion_indicator_init(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
         let mut motion_config = MotionConfiguration::new();

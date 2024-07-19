@@ -172,10 +172,10 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Returns
     /// 
-    /// * `auto_stop` :  Pointer of auto-stop feature, 0 disabled
-    pub fn get_detection_thresholds_auto_stop(&mut self) -> Result<u8, Error<B::Error>> {
+    /// * `auto_stop` :  auto-stop feature, false if disabled (default)
+    pub fn get_detection_thresholds_auto_stop(&mut self) -> Result<bool, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_PIPE_CONTROL, 4)?;
-        let auto_stop: u8 = self.temp_buffer[0x03];
+        let auto_stop: bool = self.temp_buffer[0x03] != 0;
         Ok(auto_stop)
     }
 
@@ -183,10 +183,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// # Arguments
     /// 
-    /// * `auto_stop` :  Pointer of auto-stop feature, 0 disabled (default) or 1 enabled.     
-    pub fn set_detection_thresholds_auto_stop(&mut self, auto_stop: u8) -> Result<(), Error<B::Error>> {
-        let tmp: [u8; 1] = [auto_stop];
+    /// * `auto_stop` :  auto-stop feature, false if disabled (default)
+    pub fn set_detection_thresholds_auto_stop(&mut self, auto_stop: bool) -> Result<(), Error<B::Error>> {
+        let tmp: [u8; 1] = if auto_stop {[1]} else {[0]};
         self.dci_replace_data(VL53L8CX_DCI_PIPE_CONTROL, 4, &tmp, 1, 0x03)?;
+        self.is_auto_stop_enabled = auto_stop;
         Ok(())
     }
 }
