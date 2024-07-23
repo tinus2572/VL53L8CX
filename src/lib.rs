@@ -133,6 +133,9 @@ use motion_indicator::*;
 use utils::*;
 use xtalk::*;
 
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
+
 use embedded_hal::{
     i2c::{I2c, SevenBitAddress},
     spi::{SpiDevice, Operation},
@@ -288,7 +291,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     /// Inner function, not available outside this file. 
     /// This function is used to set the offset data gathered from NVM.
-    pub(crate) fn send_offset_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub(crate) fn send_offset_data(&mut self, resolution: Resolution) -> Result<(), Error<B::Error>> {
         let mut signal_grid: [u32; 64] = [0; 64];
         let mut range_grid: [i16; 64] = [0; 64];
         let dss_4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x00, 0x08, 0x10, 0x10, 0x07];
@@ -297,7 +300,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.temp_buffer[..VL53L8CX_OFFSET_BUFFER_SIZE].copy_from_slice(&self.offset_data);
 
         // Data extrapolation is required for 4X4 offset 
-        if resolution == VL53L8CX_RESOLUTION_4X4 {
+        if resolution == Resolution::Res4X4 {
             self.temp_buffer[0x10..0x10+dss_4x4.len()].copy_from_slice(&dss_4x4);
             swap_buffer(&mut self.temp_buffer, VL53L8CX_OFFSET_BUFFER_SIZE);
             from_u8_to_u32(&mut self.temp_buffer[0x3c..0x3c+256], &mut signal_grid);
@@ -341,7 +344,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
     /// Inner function, not available outside this file. 
     /// This function is used to set the Xtalk data from generic configuration, or user's calibration.
-    pub(crate) fn send_xtalk_data(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub(crate) fn send_xtalk_data(&mut self, resolution: Resolution) -> Result<(), Error<B::Error>> {
         let res4x4: [u8; 8] = [0x0F, 0x04, 0x04, 0x17, 0x08, 0x10, 0x10, 0x07];
         let dss_4x4: [u8; 8] = [0x00, 0x78, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08];
         let profile_4x4: [u8; 4] = [0xA0, 0xFC, 0x01, 0x00];
@@ -350,7 +353,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         self.temp_buffer[..VL53L8CX_XTALK_BUFFER_SIZE].copy_from_slice(&self.xtalk_data);
 
         // Data extrapolation is required for 4X4 Xtalk 
-        if resolution == VL53L8CX_RESOLUTION_4X4 {
+        if resolution == Resolution::Res4X4 {
             self.temp_buffer[0x8..0x8 + res4x4.len()].copy_from_slice(&res4x4);
             self.temp_buffer[0x020..0x020 + dss_4x4.len()].copy_from_slice(&dss_4x4);
 
@@ -728,11 +731,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
 
         self.read_from_register(VL53L8CX_UI_CMD_START, VL53L8CX_NVM_DATA_SIZE)?;
         self.offset_data.copy_from_slice(&self.temp_buffer[..VL53L8CX_OFFSET_BUFFER_SIZE]);
-        self.send_offset_data(VL53L8CX_RESOLUTION_4X4)?;
+        self.send_offset_data(Resolution::Res4X4)?;
 
         // Set default Xtalk shape. Send Xtalk to sensor 
         self.xtalk_data.copy_from_slice(&VL53L8CX_DEFAULT_XTALK);
-        self.send_xtalk_data(VL53L8CX_RESOLUTION_4X4)?;
+        self.send_xtalk_data(Resolution::Res4X4)?;
       
         // Send default configuration to VL53L8CX firmware 
         self.write_multi_to_register(0x2c34,&VL53L8CX_DEFAULT_CONFIGURATION)?;
@@ -753,7 +756,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// This function starts a ranging session. 
     /// When the sensor streams, host cannot change settings 'on-the-fly'.
     pub fn start_ranging(&mut self) -> Result<(), Error<B::Error>> {
-        let resolution: u8 = self.get_resolution()?;
+        let resolution: Resolution = self.get_resolution()?;
         let mut tmp: [u16; 1] = [0];
         let mut header_config: [u32; 2] = [0, 0];
         let cmd: [u8; 4] = [0x00, 0x03, 0x00, 0x00];

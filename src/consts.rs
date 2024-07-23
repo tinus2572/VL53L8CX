@@ -1,5 +1,36 @@
 use embedded_hal::i2c::SevenBitAddress;
 
+use crate::FromPrimitive;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, FromPrimitive, PartialEq)]
+pub enum Resolution {
+    Res4X4 = 16,
+    Res8X8 = 64
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, FromPrimitive, PartialEq)]
+pub enum PowerMode {
+    Sleep = 0,
+    Wakeup = 1,
+    DeepSleep = 2,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, FromPrimitive, PartialEq)]
+pub enum TargetOrder {
+    Closest = 1,
+    Strongest = 2,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, FromPrimitive, PartialEq)]
+pub enum RangingMode {
+    Continuous = 1,
+    Autonomous = 3,
+}
+
 // Default I2C address of VL53L8CX sensor. 
 // Can be changed using function set_i2c_address() function is called.
 pub const VL53L8CX_DEFAULT_I2C_ADDRESS: SevenBitAddress = 0x52 >> 1;

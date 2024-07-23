@@ -152,7 +152,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `resolution` : Wanted resolution, defined by macros VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
-    pub fn motion_indicator_init(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub fn motion_indicator_init(&mut self, resolution: Resolution) -> Result<(), Error<B::Error>> {
         let mut motion_config = MotionConfiguration::new();
         self.motion_indicator_set_resolution(&mut motion_config, resolution)?;
         Ok(())
@@ -188,22 +188,21 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// 
     /// * `motion_config` : Structure containing the initialized motion configuration.
     /// * `resolution` : Wanted SCI resolution, defined by macros VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8.
-    pub fn motion_indicator_set_resolution(&mut self, motion_config: &mut MotionConfiguration, resolution: u8) -> Result<(), Error<B::Error>> {
-        if resolution == VL53L8CX_RESOLUTION_4X4 {
-            for i in 0..VL53L8CX_RESOLUTION_4X4 as usize {
-                motion_config.map_id[i] = i as i8;
-            }
-            for i in 16..VL53L8CX_RESOLUTION_4X4 as usize {
-                motion_config.map_id[i] = -1;
-            }
-        } else if resolution == VL53L8CX_RESOLUTION_8X8 {
-            for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
-                motion_config.map_id[i] =  (i as i8 % 8) / 2 + 4 * (i as i8 / 16);
+    pub fn motion_indicator_set_resolution(&mut self, motion_config: &mut MotionConfiguration, resolution: Resolution) -> Result<(), Error<B::Error>> {
+        match resolution {
+            Resolution::Res4X4 => {
+                for i in 0..VL53L8CX_RESOLUTION_4X4 as usize {
+                    motion_config.map_id[i] = i as i8;
+                }
+                for i in 16..VL53L8CX_RESOLUTION_4X4 as usize {
+                    motion_config.map_id[i] = -1;
+                }
+            }, Resolution::Res8X8 => {
+                for i in 0..VL53L8CX_RESOLUTION_8X8 as usize {
+                    motion_config.map_id[i] =  (i as i8 % 8) / 2 + 4 * (i as i8 / 16);
+                } 
             } 
-        } else {
-            return Err(Error::InvalidParam);
         }
-
         from_motion_configuration_to_u8(&motion_config, &mut self.temp_buffer[..156]);
         self.dci_write_data(VL53L8CX_DCI_MOTION_DETECTOR_CFG, 156)?;
         Ok(())

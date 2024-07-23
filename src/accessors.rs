@@ -1,7 +1,8 @@
 use consts::*;
+use stm32f4xx_hal::pac::adc1::smpr2::R;
 use utils::*;
 
-use crate::{consts, utils, BusOperation, Vl53l8cx, Error, OutputPin, DelayNs};
+use crate::{consts, utils, BusOperation, Vl53l8cx, Error, FromPrimitive, OutputPin, DelayNs};
 
 
 impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
@@ -11,11 +12,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `resolution` : Value of this pointer will be equal to 16 for 4x4 mode, and 64 for 8x8 mode.
-    pub fn get_resolution(&mut self) -> Result<u8, Error<B::Error>> {
+    pub fn get_resolution(&mut self) -> Result<Resolution, Error<B::Error>> {
         self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
         let resolution: u8 = self.temp_buffer[0x00] * self.temp_buffer[0x01];
 
-        Ok(resolution)
+        Resolution::from_u8(resolution).ok_or(Error::InvalidParam)
     }
 
     /// This function sets a new resolution (4x4 or 8x8).
@@ -23,34 +24,35 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `resolution` : Use macro VL53L8CX_RESOLUTION_4X4 or VL53L8CX_RESOLUTION_8X8 to set the resolution.
-    pub fn set_resolution(&mut self, resolution: u8) -> Result<(), Error<B::Error>> {
+    pub fn set_resolution(&mut self, resolution: Resolution) -> Result<(), Error<B::Error>> {
 
-        if resolution == VL53L8CX_RESOLUTION_4X4 {
-            self.dci_read_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.temp_buffer[0x04] = 64;
-            self.temp_buffer[0x06] = 64;
-            self.temp_buffer[0x09] = 4;
-            self.dci_write_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-            self.temp_buffer[0x00] = 4;
-            self.temp_buffer[0x01] = 4;
-            self.temp_buffer[0x04] = 8;
-            self.temp_buffer[0x05] = 8;
-            self.dci_write_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-        } else if resolution == VL53L8CX_RESOLUTION_8X8 {
-            self.dci_read_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.temp_buffer[0x04] = 16;
-            self.temp_buffer[0x06] = 16;
-            self.temp_buffer[0x09] = 1;
-            self.dci_write_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
-            self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-            self.temp_buffer[0x00] = 8;
-            self.temp_buffer[0x01] = 8;
-            self.temp_buffer[0x04] = 4;
-            self.temp_buffer[0x05] = 4;
-            self.dci_write_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
-        } else {
-            return Err(Error::InvalidParam);
+        match resolution {
+            Resolution::Res4X4 => {
+                self.dci_read_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+                self.temp_buffer[0x04] = 64;
+                self.temp_buffer[0x06] = 64;
+                self.temp_buffer[0x09] = 4;
+                self.dci_write_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+                self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
+                self.temp_buffer[0x00] = 4;
+                self.temp_buffer[0x01] = 4;
+                self.temp_buffer[0x04] = 8;
+                self.temp_buffer[0x05] = 8;
+                self.dci_write_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
+            }, 
+            Resolution::Res8X8 => {
+                self.dci_read_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+                self.temp_buffer[0x04] = 16;
+                self.temp_buffer[0x06] = 16;
+                self.temp_buffer[0x09] = 1;
+                self.dci_write_data(VL53L8CX_DCI_DSS_CONFIG, 16)?;
+                self.dci_read_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
+                self.temp_buffer[0x00] = 8;
+                self.temp_buffer[0x01] = 8;
+                self.temp_buffer[0x04] = 4;
+                self.temp_buffer[0x05] = 4;
+                self.dci_write_data(VL53L8CX_DCI_ZONE_CONFIG, 8)?;
+            }
         }
         self.send_offset_data(resolution)?;
         self.send_xtalk_data(resolution)?;
@@ -63,7 +65,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `power_mode` : Current power mode. The value of this is equal to 0 if the sensor is in low power, (VL53L8CX_POWER_MODE_SLEEP), or 1 if sensor is in standard mode (VL53L8CX_POWER_MODE_WAKEUP).
-        pub fn get_power_mode(&mut self) -> Result<u8, Error<B::Error>> {
+        pub fn get_power_mode(&mut self) -> Result<PowerMode, Error<B::Error>> {
         let power_mode: u8;
         self.write_to_register(0x7fff, 0x00)?;
         self.read_from_register(0x009, 1)?;    
@@ -81,7 +83,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         }
         self.write_to_register(0x7fff, 0x02)?;
         
-        Ok(power_mode)
+        PowerMode::from_u8(power_mode).ok_or(Error::InvalidParam)
     }
 
     /// This function is used to set the sensor in Low Power mode, for example if the sensor is not used during a long time. The macro VL53L8CX_POWER_MODE_SLEEP can be used to enable the low power mode. When user want to restart the sensor, he can use macro VL53L8CX_POWER_MODE_WAKEUP. Please ensure that the device is not streaming before calling the function.
@@ -89,11 +91,11 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `power_mode` : Selected power mode (VL53L8CX_POWER_MODE_SLEEP or VL53L8CX_POWER_MODE_WAKEUP)
-        pub fn set_power_mode(&mut self, power_mode: u8) -> Result<(), Error<B::Error>> {
-        let current_power_mode: u8 = self.get_power_mode()?;
+        pub fn set_power_mode(&mut self, power_mode: PowerMode) -> Result<(), Error<B::Error>> {
+        let current_power_mode: PowerMode = self.get_power_mode()?;
         let mut stored_mode: u8 = 0;
         if power_mode != current_power_mode {
-            if power_mode == VL53L8CX_POWER_MODE_WAKEUP {
+            if power_mode == PowerMode::Wakeup {
                 self.write_to_register(0x7fff, 0x00)?;
                 self.write_to_register(0x09, 0x04)?;
                 self.read_from_register(0x000f, 1)?;
@@ -106,18 +108,16 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
                     self.init()?;
                 }
 
-            } else if power_mode == VL53L8CX_POWER_MODE_SLEEP {
+            } else if power_mode == PowerMode::Sleep {
                 self.write_to_register(0x7fff, 0x00)?;
                 self.write_to_register(0x09, 0x02)?;
                 self.poll_for_answer(1, 0, 0x06, 0x01, 0)?;
-            } else if power_mode == VL53L8CX_POWER_MODE_DEEP_SLEEP {
+            } else if power_mode == PowerMode::DeepSleep {
                 self.write_to_register(0x7fff, 0x00)?;
                 self.write_to_register(0x09, 0x02)?;
                 self.poll_for_answer(1, 0, 0x06, 0x01, 0)?;
                 self.write_to_register(0x000f, 0x43)?;
-            } else {
-                return Err(Error::Other);
-            }
+            } 
         }
         self.write_to_register(0x7fff, 0x02)?;
         
@@ -194,12 +194,12 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `target_order` : Contains the target order.
-        pub fn get_target_order(&mut self) -> Result<u8, Error<B::Error>> {
+        pub fn get_target_order(&mut self) -> Result<TargetOrder, Error<B::Error>> {
         let target_order: u8;
         self.dci_read_data(VL53L8CX_DCI_TARGET_ORDER, 4)?;
         target_order = self.temp_buffer[0];
 
-        Ok(target_order)
+        TargetOrder::from_u8(target_order).ok_or(Error::Other)
     }
 
     /// This function sets a new target order. Please use macros VL53L8CX_TARGET_ORDER_STRONGEST and VL53L8CX_TARGET_ORDER_CLOSEST to define the new output order. By default, the sensor is configured with the strongest output.
@@ -207,12 +207,10 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `target_order` : Required target order.\
-        pub fn set_target_order(&mut self, target_order: u8) -> Result<(), Error<B::Error>> {
-        if target_order == VL53L8CX_TARGET_ORDER_CLOSEST || target_order == VL53L8CX_TARGET_ORDER_STRONGEST {
-            self.dci_replace_data(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order], 1, 0x0)?;
-        } else {
-            return Err(Error::InvalidParam);
-        }
+    pub fn set_target_order(&mut self, target_order: TargetOrder) -> Result<(), Error<B::Error>> {
+        
+        self.dci_replace_data(VL53L8CX_DCI_TARGET_ORDER, 4, &[target_order as u8], 1, 0x0)?;
+        
         Ok(())
     }
 
@@ -288,13 +286,13 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Return
     /// 
     /// `ranging_mode` : current ranging mode
-        pub fn get_ranging_mode(&mut self) -> Result<u8, Error<B::Error>> {
-        let ranging_mode: u8;
+        pub fn get_ranging_mode(&mut self) -> Result<RangingMode, Error<B::Error>> {
+        let ranging_mode: RangingMode;
         self.dci_read_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
         if self.temp_buffer[1] == 1 {
-            ranging_mode = VL53L8CX_RANGING_MODE_CONTINUOUS;
+            ranging_mode = RangingMode::Continuous;
         } else {
-            ranging_mode = VL53L8CX_RANGING_MODE_AUTONOMOUS;
+            ranging_mode = RangingMode::Autonomous;
         }
         Ok(ranging_mode)
     }
@@ -304,21 +302,19 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     /// # Arguments
     /// 
     /// * `ranging_mode` : Use macros VL53L8CX_RANGING_MODE_CONTINUOUS, VL53L8CX_RANGING_MODE_AUTONOMOUS.
-        pub fn set_ranging_mode(&mut self, ranging_mode: u8) -> Result<(), Error<B::Error>> {
+        pub fn set_ranging_mode(&mut self, ranging_mode: RangingMode) -> Result<(), Error<B::Error>> {
         let mut single_range: [u32; 1] = [0];
         self.dci_read_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
 
-        if ranging_mode == VL53L8CX_RANGING_MODE_CONTINUOUS {
+        if ranging_mode == RangingMode::Continuous {
             self.temp_buffer[1] = 1;
             self.temp_buffer[3] = 3;
             single_range[0] = 0;
-        } else if ranging_mode == VL53L8CX_RANGING_MODE_AUTONOMOUS {
+        } else if ranging_mode == RangingMode::Autonomous {
             self.temp_buffer[1] = 3;
             self.temp_buffer[3] = 2;
             single_range[0] = 1;
-        } else {
-            return Err(Error::Other);
-        }
+        } 
 
         self.dci_write_data(VL53L8CX_DCI_RANGING_MODE, 8)?;
 

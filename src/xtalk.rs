@@ -3,7 +3,7 @@ use consts::*;
 use buffers::*;
 use utils::*;
 
-use crate::{buffers, consts, utils, BlockHeader, BusOperation, Error, Vl53l8cx, OutputPin, DelayNs};
+use crate::{buffers, consts, utils, BlockHeader, BusOperation, DelayNs, Error, OutputPin, Resolution, Vl53l8cx};
 
 impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
     fn poll_for_answer_xtalk(&mut self, address: u16, expected_val: u8) -> Result<(), Error<B::Error>> {
@@ -153,7 +153,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
             || nb_samples < 1 || nb_samples > 16 {
             return Err(Error::InvalidParam);
         }
-        self.set_resolution(VL53L8CX_RESOLUTION_8X8)?;
+        self.set_resolution(Resolution::Res8X8)?;
 
         // Send Xtalk calibration buffer 
         self.temp_buffer[..984].copy_from_slice(&VL53L8CX_CALIBRATE_XTALK);
@@ -224,7 +224,7 @@ impl<B: BusOperation, LPN: OutputPin, T: DelayNs> Vl53l8cx<B, LPN, T> {
         let footer: [u8; 8] = [0x00, 0x00, 0x00, 0x0F, 0x00, 0x01, 0x03, 0x04];
         let mut xtalk_data: [u8; VL53L8CX_XTALK_BUFFER_SIZE] = [0; VL53L8CX_XTALK_BUFFER_SIZE];
         let resolution = self.get_resolution()?;
-        self.set_resolution(VL53L8CX_RESOLUTION_8X8)?;
+        self.set_resolution(Resolution::Res8X8)?;
 
         self.temp_buffer[..72].copy_from_slice(&VL53L8CX_GET_XTALK_CMD);
         self.write_multi_to_register_temp_buffer(0x2fb8, 72)?;
