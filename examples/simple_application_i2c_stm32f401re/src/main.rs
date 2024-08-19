@@ -131,12 +131,13 @@ fn main() -> ! {
         
         let i2c_bus: RefCell<StmI2c<I2C1>> = RefCell::new(i2c);
         let address: SevenBitAddress = VL53L8CX_DEFAULT_I2C_ADDRESS;
-        
+
+    let i2c = RefCellDevice::new(&i2c_bus);
+
     let mut sensor_top = Vl53l8cx::new_i2c(
-        RefCellDevice::new(&i2c_bus), 
-            lpn_pin,
-            tim_top
-        ).unwrap();
+        i2c, 
+        lpn_pin,
+        tim_top).unwrap();
 
     sensor_top.init_sensor(address).unwrap(); 
     sensor_top.set_resolution(resolution).unwrap();
