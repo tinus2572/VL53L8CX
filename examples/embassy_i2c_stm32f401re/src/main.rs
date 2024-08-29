@@ -7,12 +7,11 @@ use embassy_stm32::dma::NoDma;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::i2c::{self, Config as I2cConfig, I2c};
 use embassy_stm32::peripherals::{self, USART2};
-use embassy_stm32::rcc::{Config as RccConfig, Hse, HseMode};
+use embassy_stm32::rcc::{Config as RccConfig, Hse, HseMode, LseConfig, LseMode, LseDrive};
 use embassy_stm32::time::{khz, mhz};
 use embassy_stm32::usart::{BufferedInterruptHandler, Config as UsartConfig, DataBits, Parity, UartTx};
 use embassy_stm32::Config;
 use embassy_time::Delay;
-use embedded_hal::delay::DelayNs;
 use core::fmt::Write;
 use heapless::String;
 use {defmt_rtt as _, panic_probe as _};
@@ -40,54 +39,6 @@ fn write_results(tx: &mut UartTx<USART2>, results: &ResultsData, width: usize) {
         let _ = tx.blocking_write(msg.as_bytes());
         msg.clear();
     }
-    
-    // writeln!(tx, "VL53L8A1 Simple Ranging demo application\n").unwrap();
-
-    // writeln!(tx, "Cell Format :\n").unwrap();
-    // writeln!(
-    //     tx, 
-    //     "\x1b[96m{dis:>20}\x1b[0m \x1b[92m{sta:<20}\x1b[0m", 
-    //     dis="Distance [mm]", 
-    //     sta="Status"
-    // ).unwrap();
-    // writeln!(
-    //     tx, 
-    //     "\x1b[93m{sig:>20}\x1b[0m \x1b[91m{amb:<20}\x1b[0m", 
-    //     sig="Signal [kcps/spad]", 
-    //     amb="Ambient [kcps/spad]"
-    // ).unwrap();
-
-    // for j in 0..width {
-    //     for _ in 0..width { write!(tx, "+----------").unwrap(); } writeln!(tx, "+").unwrap();
-        
-    //     #[cfg(not(any(feature="VL53L8CX_DISABLE_DISTANCE_MM", feature="VL53L8CX_DISABLE_TARGET_STATUS")))]
-    //     {
-    //         for i in 0..width {
-    //             write!(
-    //                 tx, 
-    //                 "|\x1b[96m{dis:>5}\x1b[0m \x1b[92m{sta:<4}\x1b[0m", 
-    //             dis=results.distance_mm[width*j+i], 
-    //             sta=results.target_status[width*j+i]
-    //             ).unwrap();
-    //         } write!(tx, "|\n").unwrap();
-    //     }
-
-    //     #[cfg(not(any(feature="VL53L8CX_DISABLE_SIGNAL_PER_SPAD", feature="VL53L8CX_DISABLE_AMBIENT_PER_SPAD")))]
-    //     {
-    //         for i in 0..width {
-    //             let mut sig: u32 = results.signal_per_spad[width*j+i];
-    //             if sig > 9999 { sig = 9999; }
-    //             write!(
-    //                 tx, 
-    //                 "|\x1b[93m{sig:>5}\x1b[0m \x1b[91m{amb:<4}\x1b[0m", 
-    //                 sig=sig, 
-    //                 amb=results.ambient_per_spad[width*j+i]
-    //             ).unwrap();
-    //         } write!(tx, "|\n").unwrap();
-    //     }
-    // }
-    // for _ in 0..width { write!(tx, "+----------").unwrap(); } writeln!(tx, "+").unwrap();
-
 }
 
 
@@ -96,7 +47,9 @@ fn main() -> ! {
 
     let mut rcc_config: RccConfig = RccConfig::default();
     let hse: Hse = Hse {freq: mhz(8), mode: HseMode::Oscillator};
+    let lse: LseConfig = LseConfig {frequency: mhz(48), mode: LseMode::Oscillator(LseDrive::High)};
     rcc_config.hse = Some(hse);
+    rcc_config.ls.lse = Some(lse);
 
     let mut config: Config = Config::default();
     config.rcc = rcc_config;
@@ -119,7 +72,7 @@ fn main() -> ! {
     
     let lpn_pin: Output<_> = Output::new(p.PB0, Level::High, Speed::Low);
 
-    let mut tim: Delay = Delay {};
+    let tim: Delay = Delay {};
 
     let i2c: I2c<_> = I2c::new(
         p.I2C1, 
@@ -135,12 +88,12 @@ fn main() -> ! {
     let mut sensor = Vl53l8cx::new_i2c(i2c, lpn_pin, tim.clone()).unwrap();
 
     sensor.init_sensor(VL53L8CX_DEFAULT_I2C_ADDRESS).unwrap();
+    sensor.set_frequency_hz(30).unwrap();
     sensor.start_ranging().unwrap();
 
     loop {
         while !sensor.check_data_ready().unwrap() {}
         let results = sensor.get_ranging_data().unwrap();
         write_results(&mut tx, &results, 4);
-        tim.delay_ms(500);
     }
 }
